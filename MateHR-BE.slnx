@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/Documentation/">
+    <File Path="ReadME.md" />
+  </Folder>
+  <Project Path="MateHR.Api/MateHR.Api.csproj" />
+  <Project Path="MateHR.Application/MateHR.Application.csproj" />
+  <Project Path="MateHR.Domain/MateHR.Domain.csproj" />
+  <Project Path="MateHR.Infrastructure/MateHR.Infrastructure.csproj" />
+</Solution>

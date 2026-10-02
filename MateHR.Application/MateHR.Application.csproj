@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MateHR.Domain\MateHR.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Common\" />
+    <Folder Include="Recruitment\Commands\" />
+    <Folder Include="Recruitment\DTOs\" />
+    <Folder Include="Recruitment\Interfaces\" />
+    <Folder Include="Recruitment\Mappings\" />
+    <Folder Include="Recruitment\Validators\" />
+    <Folder Include="Recruitment\Queries\" />
+  </ItemGroup>
+
+</Project>
