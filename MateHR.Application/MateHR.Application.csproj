@@ -18,6 +18,15 @@
     <Folder Include="Recruitment\Mappings\" />
     <Folder Include="Recruitment\Validators\" />
     <Folder Include="Recruitment\Queries\" />
+    <Folder Include="Tenants\DTOs\" />
+    <Folder Include="Tenants\Interfaces\" />
+    <Folder Include="Tenants\Mappings\" />
+    <Folder Include="Tenants\Validators\" />
+    <Folder Include="Tenants\Queries\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AutoMapper" Version="16.2.0" />
   </ItemGroup>
 
 </Project>
