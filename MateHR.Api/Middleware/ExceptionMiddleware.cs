@@ -1,5 +1,7 @@
 ﻿using System.Diagnostics;
 using AutoMapper;
+using MateHR.Domain.Exceptions;
+using FluentValidation;
 
 namespace MateHR.Api.Middleware
 {
@@ -47,9 +49,19 @@ namespace MateHR.Api.Middleware
 
             var effective = Unwrap(exception);
 
+            if (effective is ValidationException validationException)
+            {
+                await WriteValidationErrorsAsync(context, validationException, traceId, method, path);
+                return;
+            }
+
+
             var (statusCode, message) = effective switch
             {
                 KeyNotFoundException => (StatusCodes.Status404NotFound, effective.Message),
+                SlugAlreadyExistsException => (StatusCodes.Status409Conflict, effective.Message),
+                EmailAlreadyExistsException => (StatusCodes.Status409Conflict, effective.Message),
+                InvalidCredentialsException => (StatusCodes.Status401Unauthorized, effective.Message),
                 ArgumentException => (StatusCodes.Status400BadRequest, effective.Message),
                 HttpRequestException => (StatusCodes.Status502BadGateway, "No se pudo comunicar con un servicio externo."),
                 _ => (StatusCodes.Status500InternalServerError, "Ocurrio un error inesperado.")
@@ -70,6 +82,31 @@ namespace MateHR.Api.Middleware
             context.Response.Clear();
             context.Response.StatusCode = statusCode;
             await context.Response.WriteAsJsonAsync(new { message, traceId });
+        }
+        private async Task WriteValidationErrorsAsync(
+            HttpContext context,
+            ValidationException exception,
+            string traceId,
+            string method,
+            string path)
+        {
+            _logger.LogWarning("[{TraceId}] 400 en {Method} {Path}: {Message}",
+                traceId, method, path, exception.Message);
+
+            var errors = exception.Errors
+                .GroupBy(failure => failure.PropertyName)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Select(failure => failure.ErrorMessage).ToArray());
+
+            context.Response.Clear();
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                message = "Se encontraron errores de validacion.",
+                traceId,
+                errors
+            });
         }
 
         private static string GetTraceId(HttpContext context)

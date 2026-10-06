@@ -1,4 +1,5 @@
 ﻿using MateHR.Domain.Tenants.Entities;
+using MateHR.Domain.Users.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace MateHR.Infrastructure.Persistance
@@ -11,6 +12,8 @@ namespace MateHR.Infrastructure.Persistance
         }
 
         public DbSet<Tenant> Tenants { get; set; }
+        public DbSet<User> Users { get; set; }
+        public DbSet<RefreshToken> RefreshTokens { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -39,6 +42,14 @@ namespace MateHR.Infrastructure.Persistance
                 if (entry.State == EntityState.Modified)
                 {
                     entry.Property(nameof(Tenant.UpdatedAt)).CurrentValue = now;
+                }
+            }
+
+            foreach (var entry in ChangeTracker.Entries<User>())
+            {
+                if (entry.State == EntityState.Modified)
+                {
+                    entry.Property(nameof(User.UpdatedAt)).CurrentValue = now;
                 }
             }
         }

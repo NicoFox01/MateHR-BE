@@ -13,10 +13,6 @@
 
   <ItemGroup>
     <Folder Include="Migration\" />
-    <Folder Include="Authentication\" />
-    <Folder Include="Settings\" />
-    <Folder Include="Services\" />
-    <Folder Include="Persistance\Migration\" />
   </ItemGroup>
 
   <ItemGroup>
@@ -28,6 +24,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
   </ItemGroup>
 
 </Project>

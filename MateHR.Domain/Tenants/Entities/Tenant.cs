@@ -1,4 +1,5 @@
-﻿using MateHR.Domain.Tenants.Enums;
+﻿using MateHR.Domain.Common;
+using MateHR.Domain.Tenants.Enums;
 using MateHR.Domain.Tenants.ValueObjects;
 using System.Net.Mail;
 using System.Text;
@@ -117,18 +118,7 @@ namespace MateHR.Domain.Tenants.Entities
 
         private static string NormalizeSlug(string slug)
         {
-            var normalized = slug.ToLowerInvariant().Replace(' ', '-');
-            var builder = new StringBuilder(normalized.Length);
-
-            foreach (var ch in normalized)
-            {
-                if (char.IsAsciiLetterOrDigit(ch) || ch == '-')
-                {
-                    builder.Append(ch);
-                }
-            }
-
-            return builder.ToString();
+            return SlugGenerator.Generate(slug);
         }
 
         private static string ValidateCuit(string cuit)

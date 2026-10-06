@@ -1,6 +1,11 @@
-﻿using MateHR.Domain.Tenants.Interfaces;
+﻿using MateHR.Application.Common.Interfaces;
+using MateHR.Domain.Tenants.Interfaces;
+using MateHR.Domain.Users.Interfaces;
+using MateHR.Infrastructure.Authentication;
 using MateHR.Infrastructure.Persistance;
 using MateHR.Infrastructure.Persistance.Repositories;
+using MateHR.Infrastructure.Services;
+using MateHR.Infrastructure.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +26,15 @@ namespace MateHR.Infrastructure
                 options.UseSqlServer(connectionString));
 
             services.AddScoped<ITenantRepository, TenantRepository>();
+            services.AddScoped<ITenantContext, TenantContext>();
+            services.AddScoped<IUserRepository, UserRepository>();
+            services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+
+            services.Configure<JwtSettings>(configuration.GetSection(JwtSettings.SectionName));
+
+            services.AddSingleton<IPasswordHasher, PasswordHasher>();
+            services.AddSingleton<IRefreshTokenService, RefreshTokenService>();
+            services.AddSingleton<IJwtService, JwtService>();
 
             return services;
         }

@@ -1,4 +1,5 @@
 ﻿using MateHR.Domain.Tenants.Entities;
+using MateHR.Domain.Tenants.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -61,11 +62,11 @@ namespace MateHR.Infrastructure.Persistance.Configurations
 
             builder.OwnsOne(t => t.Address, address =>
             {
-                address.Property(a => a.Street).HasMaxLength(200);
-                address.Property(a => a.City).HasMaxLength(100);
-                address.Property(a => a.State).HasMaxLength(100);
-                address.Property(a => a.Country).HasMaxLength(100);
-                address.Property(a => a.PostalCode).HasMaxLength(20);
+                address.Property(a => a.Street).HasMaxLength(Address.StreetMaxLength);
+                address.Property(a => a.City).HasMaxLength(Address.CityMaxLength);
+                address.Property(a => a.State).HasMaxLength(Address.StateMaxLength);
+                address.Property(a => a.Country).HasMaxLength(Address.CountryMaxLength);
+                address.Property(a => a.PostalCode).HasMaxLength(Address.PostalCodeMaxLength);
             });
 
             builder.Navigation(t => t.Address)
