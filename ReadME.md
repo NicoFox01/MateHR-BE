@@ -403,11 +403,18 @@ Detalles de diseño:
   `tenant_id` (presente sólo para roles con tenant).
 - **Refresh token**: opaco de 64 bytes aleatorios (base64url). Viaja **únicamente** en
   cookie `httpOnly` de path `/api/v1/auth`; nunca aparece en el cuerpo JSON.
-- En la base se guarda **el hash SHA-256** del refresh token, no el token. El logout
-  hashea la cookie y busca por `TokenHash`. Si alguien lee la tabla `RefreshTokens` no
-  puede suplantar ninguna sesión.
+- En la base se guarda **el hash SHA-256** del refresh token, no el token. El logout y el
+  refresh hashean la cookie y buscan por `TokenHash`. Si alguien lee la tabla
+  `RefreshTokens` no puede suplantar ninguna sesión.
+- **Rotación**: cada `/auth/refresh` revoca el token usado y emite uno nuevo. Si llega un
+  token ya revocado se asume robo y se revocan **todos** los refresh del usuario.
 - **Contraseñas**: PBKDF2-SHA256, 210 000 iteraciones, salt de 16 bytes por usuario.
 - `PasswordHasher` usa comparación de tiempo constante en la verificación.
+- **`SecurityStamp`**: `SecurityStampValidationMiddleware` lo compara contra la base en
+  cada request autenticado, con caché de 30 s para no consultarla siempre. Cambiar la
+  contraseña, desactivar o activar a un usuario invalida sus tokens issued en el acto.
+- **Roles**: `SuperAdmin=1`, `Admin=2`, `Recruiter=3`, `Employee=4`. Empiezan en 1 a
+  propósito: con `default` en 0, un `User` construido sin rol explícito sería SuperAdmin.
 
 Configuración (sección `Jwt` de `appsettings.json`):
 
@@ -434,15 +441,28 @@ configuración al resolverse (fail-closed) en vez de confiar en valores vacíos.
 | Método | Ruta | Auth | Respuesta |
 |---|---|---|---|
 | `POST` | `/api/v1/auth/login` | Anónimo | `200` access token + info de usuario; cookie refresh |
+| `POST` | `/api/v1/auth/refresh` | Cookie refresh | `200` access token nuevo; rota la cookie refresh |
 | `POST` | `/api/v1/auth/logout` | Anónimo | `204`; revoca el refresh de la cookie |
 | `GET` | `/api/v1/auth/me` | Bearer | `200` con el usuario del token |
+| `POST` | `/api/v1/users` | **SuperAdmin** | `201`; crea un usuario de cualquier rol |
 
-`/api/v1/auth/refresh` (rotación del access token) **queda pendiente**: hoy el refresh
-token se emite y revoca, pero no hay endpoint que lo canjee. También falta el alta de
-usuarios (registro o endpoint administrativo), así que hoy la tabla `Users` se puebla a
-mano.
+Policies: `RequireSuperAdmin` y `RequireAdmin`.
 
-Policies disponibles: `RequireSuperAdmin`, `RequireAdmin`.
+`/api/v1/tenants` (todos sus endpoints) exige **SuperAdmin**: los tenants son la
+estructura de la plataforma y su administration no se delega a tenants.
+
+### Dar de alta al primer SuperAdmin
+
+El endpoint de alta exige un token de SuperAdmin, así que el primero no se puede crear
+por HTTP. Para eso hay un comando:
+
+```bash
+dotnet run --project MateHR.Api -- --seed-superadmin --email root@matehr.com
+```
+
+Si no se pasa `--password` genera una de 24 caracteres al azar y la imprime una sola vez.
+Opcionales: `--password`, `--first-name`, `--last-name`. Si el email ya existe no hace
+nada y sale con código 1.
 
 ---
 

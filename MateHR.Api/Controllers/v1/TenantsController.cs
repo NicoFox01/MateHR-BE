@@ -1,3 +1,4 @@
+using MateHR.Api.Authorization;
 using MateHR.Application.Tenants.DTOs;
 using MateHR.Application.Tenants.Interfaces;
 using MateHR.Domain.Common;
@@ -9,6 +10,7 @@ namespace MateHR.Api.Controllers.v1
     [ApiController]
     [Route("api/v1/[controller]")]
     [Produces("application/json")]
+    [Authorize(Policy = AuthPolicies.RequireSuperAdmin)]
     public class TenantsController : ControllerBase
     {
         private readonly ICreateTenant _createTenant;
@@ -41,7 +43,6 @@ namespace MateHR.Api.Controllers.v1
         }
 
         [HttpPost]
-        [AllowAnonymous]
         [ProducesResponseType(typeof(TenantResponse), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -55,7 +56,7 @@ namespace MateHR.Api.Controllers.v1
         }
 
         [HttpGet]
-        [Authorize]
+
         [ProducesResponseType(typeof(PagedResult<TenantResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<PagedResult<TenantResponse>>> GetAll(
@@ -68,7 +69,7 @@ namespace MateHR.Api.Controllers.v1
         }
 
         [HttpGet("{id:guid}")]
-        [Authorize]
+
         [ProducesResponseType(typeof(TenantResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult<TenantResponse>> GetById(
@@ -81,7 +82,6 @@ namespace MateHR.Api.Controllers.v1
         }
 
         [HttpGet("slug/{slug}")]
-        [AllowAnonymous]
         [ProducesResponseType(typeof(TenantResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<ActionResult<TenantResponse>> GetBySlug(
@@ -94,7 +94,7 @@ namespace MateHR.Api.Controllers.v1
         }
 
         [HttpPut("{id:guid}")]
-        [Authorize]
+
         [ProducesResponseType(typeof(TenantResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -110,7 +110,7 @@ namespace MateHR.Api.Controllers.v1
         }
 
         [HttpPatch("{id:guid}/status")]
-        [Authorize]
+
         [ProducesResponseType(typeof(TenantResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -125,7 +125,7 @@ namespace MateHR.Api.Controllers.v1
         }
 
         [HttpPatch("{id:guid}/recruitment-mode")]
-        [Authorize]
+
         [ProducesResponseType(typeof(TenantResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -140,7 +140,7 @@ namespace MateHR.Api.Controllers.v1
         }
 
         [HttpPatch("{id:guid}/subscription-type")]
-        [Authorize]
+
         [ProducesResponseType(typeof(TenantResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]

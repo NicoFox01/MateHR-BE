@@ -1,8 +1,9 @@
 # Backlog — Módulo de Tenants y Autenticación
 
 > Documento de planificación. **No contiene código**: sólo tareas, dependencias y criterios de aceptación.
-> Última actualización: 2026-10-06 · Estado: Bloques 1 a 4 completados, migración inicial aplicada,
-> autenticación JWT (login / logout / me) implementada y verificada contra la base.
+> Última actualización: 2026-10-06 · Estado: Bloques 1 a 4 completados, autenticación JWT completa
+> (login / refresh / logout / me, alta de usuarios, validación de SecurityStamp) y `Tenants`
+> restringido a SuperAdmin. DEB-01 a DEB-13 resueltos.
 
 ## Contexto
 
@@ -407,17 +408,17 @@ Encontrada revisando el código. No pertenece a los bloques 3 y 4, pero se pierd
 | DEB-04 | `UseAuthorization()` sin `UseAuthentication()` antes: hoy es código muerto | `Program.cs:25` | Media | Resuelto — se registró JWT bearer |
 | DEB-05 | Migración `InitialCreate` nunca generada. La tabla `Tenants` no existe en la base | — | Alta | Resuelto el 2026-10-06 |
 | DEB-06 | 5 warnings `CS8618` en `Address`: propiedades no-nullables sin constructor | `ValueObjects/Address.cs:14-18` | Baja | Resuelto el 2026-10-06 — se inicializan a `string.Empty` |
-| DEB-07 | `Infrastructure` tiene `Nullable=disable` mientras `Domain` y `Application` lo tienen en `enable` | `Infrastructure.csproj:6` | Media | Abierto — ver DEB-08 |
-| DEB-08 | Con `Nullable=disable`, los repositorios que implementan interfaces con tipos de referencia anulables necesitan `#nullable enable` por archivo | `UserRepository.cs`, `RefreshTokenRepository.cs` | Baja | Parcial — se aplicó `#nullable enable` archivo por archivo; la solución real es resolver DEB-07 |
-| DEB-09 | No hay forma de crear el primer usuario: sin registro ni endpoint administrativo, la tabla `Users` solo se puebla a mano | `MateHR.Api` | **Alta** | Abierto — bloquea cualquier uso real del sistema |
-| DEB-10 | No existe `/api/v1/auth/refresh`: el refresh token se emite y revoca, pero nada lo canjea por un access token nuevo | `AuthController.cs` | Media | Abierto — diferido por alcance |
-| DEB-11 | `SecurityStamp` se emite en el JWT pero no se valida contra la base en cada request | `JwtService.cs` | Media | Abierto — el stamp no invalida tokens emitidos antes de un cambio de contraseña |
-| DEB-12 | `RefreshToken.ReplaceWith()` está implementado pero sin usar: sólo lo necesitaría la rotación de refresh | `RefreshToken.cs` | Baja | Abierto — depende de DEB-10 |
-| DEB-13 | `UserRole` empieza en 0 (`SuperAdmin=0`), así que el `default` es un rol válido | `Domain/Users/Enums/UserRole.cs` | Baja | Abierto — conviene arrancar en 1 para que el default sea inválido |
+| DEB-07 | `Infrastructure` tenía `Nullable=disable` mientras `Domain` y `Application` lo tenían en `enable` | `Infrastructure.csproj:6` | Media | Resuelto el 2026-10-06 — `Nullable=enable` sin warnings nuevos |
+| DEB-08 | Con `Nullable=disable` había que poner `#nullable enable` archivo por archivo en los repositorios | `UserRepository.cs`, `RefreshTokenRepository.cs` | Baja | Resuelto junto con DEB-07 — ya no hacen falta |
+| DEB-09 | No había forma de crear el primer usuario: sin registro ni endpoint administrativo | `MateHR.Api` | **Alta** | Resuelto el 2026-10-06 — `POST /api/v1/users` (SuperAdmin) + comando `--seed-superadmin` |
+| DEB-10 | No existía `/api/v1/auth/refresh`: el refresh token se emitía y revocaba, pero nada lo canjeaba | `AuthController.cs` | Media | Resuelto el 2026-10-06 — rotación con detección de reuso |
+| DEB-11 | `SecurityStamp` se emitía en el JWT pero no se validaba contra la base | `JwtService.cs` | Media | Resuelto el 2026-10-06 — `SecurityStampValidationMiddleware` con caché de 30 s |
+| DEB-12 | `RefreshToken.ReplaceWith()` estaba implementado pero sin usar | `RefreshToken.cs` | Baja | Resuelto el 2026-10-06 — lo usa la rotación de `/auth/refresh` |
+| DEB-13 | `UserRole` empezaba en 0 (`SuperAdmin=0`), así que el `default` era un rol válido | `Domain/Users/Enums/UserRole.cs` | Baja | Resuelto el 2026-10-06 — ahora 1..4, con migración de remapeo |
 
 ### Sobre DEB-07
 
-Con nullable deshabilitado en `Infrastructure`, una asignación floja como `tenantContext.CurrentTenantId.Value` **no genera warning**. El compilador avisa en `Application` (nullable activo) pero no en `Infrastructure`. Cualquier refactor que toque esa capa debería revisar el `Nullable`.
+Con nullable deshabilitado en `Infrastructure`, una asignación floja como `tenantContext.CurrentTenantId.Value` **no genera warning**. El compilador avisa en `Application` (nullable activo) pero no en `Infrastructure`. Resuelto el 2026-10-06 activando `Nullable` en la capa: no apareció ningún warning nuevo y los `#nullable enable` por archivo quedaron como redundantes.
 
 ---
 

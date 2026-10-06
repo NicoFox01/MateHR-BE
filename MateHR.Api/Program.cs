@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using MateHR.Api.Authorization;
 using MateHR.Api.Extensions;
 using MateHR.Api.Middleware;
+using MateHR.Api.Seeding;
 using MateHR.Domain.Common;
 using MateHR.Infrastructure;
 using MateHR.Infrastructure.Settings;
@@ -16,6 +17,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+
+var runSeeder = SuperAdminSeeder.IsRequested(args);
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -62,6 +65,12 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+if (runSeeder)
+{
+    await app.Services.SeedSuperAdminAsync(args);
+    return;
+}
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -80,6 +89,8 @@ app.UseApiMiddleware();
 app.UseHttpsRedirection();
 
 app.UseAuthentication();
+
+app.UseMiddleware<SecurityStampValidationMiddleware>();
 
 app.UseMiddleware<TenantContextMiddleware>();
 

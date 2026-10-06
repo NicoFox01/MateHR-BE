@@ -3,16 +3,12 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>disable</Nullable>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\MateHR.Application\MateHR.Application.csproj" />
     <ProjectReference Include="..\MateHR.Domain\MateHR.Domain.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Migration\" />
   </ItemGroup>
 
   <ItemGroup>

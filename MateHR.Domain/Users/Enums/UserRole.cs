@@ -2,9 +2,9 @@ namespace MateHR.Domain.Users.Enums
 {
     public enum UserRole
     {
-        SuperAdmin = 0,
-        Admin = 1,
-        Recruiter = 2,
-        Employee = 3
+        SuperAdmin = 1,
+        Admin = 2,
+        Recruiter = 3,
+        Employee = 4
     }
 }

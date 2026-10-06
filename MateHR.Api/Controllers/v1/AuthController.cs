@@ -17,17 +17,20 @@ namespace MateHR.Api.Controllers.v1
 
         private readonly ILoginUser _loginUser;
         private readonly ILogoutUser _logoutUser;
+        private readonly IRefreshAccessToken _refreshAccessToken;
         private readonly IGetCurrentUser _getCurrentUser;
         private readonly JwtSettings _jwtSettings;
 
         public AuthController(
             ILoginUser loginUser,
             ILogoutUser logoutUser,
+            IRefreshAccessToken refreshAccessToken,
             IGetCurrentUser getCurrentUser,
             IOptions<JwtSettings> jwtSettings)
         {
             _loginUser = loginUser;
             _logoutUser = logoutUser;
+            _refreshAccessToken = refreshAccessToken;
             _getCurrentUser = getCurrentUser;
             _jwtSettings = jwtSettings.Value;
         }
@@ -42,6 +45,24 @@ namespace MateHR.Api.Controllers.v1
             CancellationToken cancellationToken)
         {
             var response = await _loginUser.ExecuteAsync(request, cancellationToken);
+
+            Response.Cookies.Append(
+                RefreshTokenCookieName,
+                response.RefreshToken,
+                BuildCookieOptions(response.RefreshTokenExpiresAt));
+
+            return Ok(response);
+        }
+
+        [HttpPost("refresh")]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<ActionResult<LoginResponse>> Refresh(CancellationToken cancellationToken)
+        {
+            var currentToken = Request.Cookies[RefreshTokenCookieName];
+
+            var response = await _refreshAccessToken.ExecuteAsync(currentToken, cancellationToken);
 
             Response.Cookies.Append(
                 RefreshTokenCookieName,

@@ -1,5 +1,3 @@
-#nullable enable
-
 using MateHR.Domain.Users.Entities;
 using MateHR.Domain.Users.Interfaces;
 using Microsoft.EntityFrameworkCore;

@@ -1,5 +1,3 @@
-#nullable enable
-
 using MateHR.Domain.Users.Entities;
 using MateHR.Domain.Users.Interfaces;
 using Microsoft.EntityFrameworkCore;
@@ -54,6 +52,29 @@ namespace MateHR.Infrastructure.Persistance.Repositories
 
             await _context.SaveChangesAsync(cancellationToken);
             return expired.Count;
+        }
+
+        public async Task<int> RevokeAllUserRefreshTokensAsync(
+            Guid userId,
+            DateTimeOffset moment,
+            CancellationToken cancellationToken = default)
+        {
+            var active = await _context.RefreshTokens
+                .Where(t => t.UserId == userId && t.RevokedAt == null)
+                .ToListAsync(cancellationToken);
+
+            foreach (var token in active)
+            {
+                token.Revoke(moment);
+            }
+
+            if (active.Count == 0)
+            {
+                return 0;
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            return active.Count;
         }
     }
 }
