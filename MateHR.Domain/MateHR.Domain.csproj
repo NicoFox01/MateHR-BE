@@ -11,6 +11,8 @@
     <Folder Include="Recruitment\Aggregates\" />
     <Folder Include="Recruitment\DomainEvents\" />
     <Folder Include="Recruitment\ValueObjects\" />
+    <Folder Include="Tenants\Aggregates\" />
+    <Folder Include="Tenants\DomainEvents\" />
   </ItemGroup>
 
 </Project>

@@ -1,0 +1,71 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Ll]ogs/
+artifacts/
+*.binlog
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+project.lock.json
+project.fragment.lock.json
+*.nuget.props
+*.nuget.targets
+
+# NOTE: .config/dotnet-tools.json should be COMMITTED, not ignored.
+# It pins the dotnet-ef version so every machine runs the same tooling.
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.DotSettings.user
+*.sln.xslt
+*.VC.db
+*.VC.opendb
+
+# JetBrains Rider
+.idea/
+
+# VS Code (workspace settings are team-shared; drop this line if you prefer to commit them)
+.vscode/
+
+# Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og/
+*.trx
+*.coverage
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# Environment-specific and secret settings.
+# NOTE: appsettings.json and appsettings.Development.json are intentionally NOT ignored,
+# they hold no credentials.
+appsettings.Local.json
+appsettings.*.local.json
+secrets.json
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+
+# Local database files
+*.db
+*.db-shm
+*.db-wal
+*.mdf
+*.ldf
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
