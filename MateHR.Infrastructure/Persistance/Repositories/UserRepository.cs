@@ -1,4 +1,5 @@
 using MateHR.Domain.Users.Entities;
+using MateHR.Domain.Users.Enums;
 using MateHR.Domain.Users.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
@@ -41,6 +42,29 @@ namespace MateHR.Infrastructure.Persistance.Repositories
             return _context.Users
                 .AsNoTracking()
                 .AnyAsync(u => u.Email == normalized, cancellationToken);
+        }
+
+        public async Task<IReadOnlyList<User>> GetUsersAsync(
+            Guid? tenantId,
+            UserRole? role,
+            CancellationToken cancellationToken = default)
+        {
+            var query = _context.Users.AsNoTracking();
+
+            if (tenantId.HasValue)
+            {
+                query = query.Where(u => u.TenantId == tenantId.Value);
+            }
+
+            if (role.HasValue)
+            {
+                query = query.Where(u => u.Role == role.Value);
+            }
+
+            return await query
+                .OrderBy(u => u.LastName)
+                .ThenBy(u => u.FirstName)
+                .ToListAsync(cancellationToken);
         }
 
         public async Task<User> CreateUserAsync(User user, CancellationToken cancellationToken = default)

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using MateHR.Application.Users.Interfaces;
 using MateHR.Domain.Common;
+using Microsoft.AspNetCore.Authorization;
 
 namespace MateHR.Api.Middleware
 {
@@ -28,6 +29,12 @@ namespace MateHR.Api.Middleware
             var user = context.User;
 
             if (user.Identity?.IsAuthenticated != true)
+            {
+                await _next(context);
+                return;
+            }
+
+            if (context.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is not null)
             {
                 await _next(context);
                 return;

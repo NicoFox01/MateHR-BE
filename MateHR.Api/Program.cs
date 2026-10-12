@@ -14,6 +14,17 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? new[]
+{
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:5176",
+    "http://localhost:5180",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173"
+};
+
 // Add services to the container.
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -54,6 +65,17 @@ builder.Services.AddAuthorization(options =>
         policy.RequireRole(AuthPolicies.SuperAdminRole, AuthPolicies.AdminRole));
 });
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("DefaultCors", policy =>
+    {
+        policy.WithOrigins(allowedOrigins)
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 builder.Services
     .AddControllers()
     .AddJsonOptions(options =>
@@ -86,7 +108,12 @@ if (string.IsNullOrWhiteSpace(builder.Configuration[$"{JwtSettings.SectionName}:
 
 app.UseApiMiddleware();
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
+app.UseCors("DefaultCors");
 
 app.UseAuthentication();
 
@@ -99,3 +126,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }

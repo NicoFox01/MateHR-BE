@@ -15,6 +15,8 @@ namespace MateHR.Application.Users
             services.AddScoped<IRefreshAccessToken, RefreshAccessToken>();
             services.AddScoped<ICreateUser, CreateUser>();
             services.AddScoped<IGetCurrentUser, GetCurrentUser>();
+            services.AddScoped<IGetUsers, GetUsers>();
+            services.AddScoped<IChangeUserStatus, ChangeUserStatus>();
             services.AddScoped<IUserProvisioningService, UserProvisioningService>();
 
             return services;
