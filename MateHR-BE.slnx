@@ -8,9 +8,6 @@
   <Project Path="MateHR.Domain/MateHR.Domain.csproj" />
   <Project Path="MateHR.Infrastructure/MateHR.Infrastructure.csproj" />
   <Folder Name="/Tests/">
-    <Project Path="MateHR.Domain.Tests/MateHR.Domain.Tests.csproj" Id="29a98ada-c2a1-4c66-9488-ac7783d2754a" />
-    <Project Path="MateHR.Application.Tests/MateHR.Application.Tests.csproj" Id="e6417116-8dda-4cce-8a89-438ee67b706f" />
-    <Project Path="MateHR.Infrastructure.Tests/MateHR.Infrastructure.Tests.csproj" Id="831e69ff-2f6d-40c3-a25a-9d972e55bbf2" />
-    <Project Path="MateHR.Api.Tests/MateHR.Api.Tests.csproj" Id="d807d716-18c2-4de9-887e-0a0a6ba2ba06" />
+    <Project Path="Tests/MateHR.Tests.csproj" Id="787f5fa4-a4c6-4d2f-b6ca-c38eaa0a2645" />
   </Folder>
 </Solution>
