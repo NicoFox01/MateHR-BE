@@ -8,7 +8,6 @@ using MateHR.Domain.Tenants.Entities;
 using MateHR.Domain.Tenants.Enums;
 using MateHR.Domain.Tenants.ValueObjects;
 using Microsoft.Extensions.Logging.Abstractions;
-using Xunit;
 
 namespace MateHR.Application.Tests.Common
 {
@@ -42,6 +41,14 @@ namespace MateHR.Application.Tests.Common
 
             Action act = () => configuration.AssertConfigurationIsValid();
 
+            act.Should().NotThrow<AutoMapperConfigurationException>();
+        }
+        [Fact]
+        public void RecruitmentMappings_AssertConfigurationIsValid_Passes()
+        {
+            var configuration = new MapperConfiguration(cfg => cfg.AddMaps(typeof(MateHR.Application.DependencyInjection).Assembly),
+                NullLoggerFactory.Instance);
+            Action act = () => configuration.AssertConfigurationIsValid();
             act.Should().NotThrow<AutoMapperConfigurationException>();
         }
 

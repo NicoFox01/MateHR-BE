@@ -1,1600 +1,1418 @@
-## Bloque 5 — Tests (TDD)
+# Backlog — Módulo Recruitment
 
-> Acá va la guía para que vos mismo escribas los tests de cada archivo. El scaffolding ya está
-> armado (proyectos `MateHR.*.Tests`, paquetes, referencias y `.slnx`), así que no hace falta
-> crear nada más: solamente crear los `.cs` dentro de las carpetas espejo y correrlos.
+> Este backlog define el roadmap del módulo **Recruitment**. Está agrupado **por cosa** (tarea
+> padre) y cada cosa se construye con **4 subtareas** en este orden:
 >
-> **Cómo correr los tests:**
-> ```bash
-> dotnet test                       # todos los proyectos
-> dotnet test MateHR.Application.Tests    # una sola capa
-> dotnet test --filter "ClassName=CreateTenantTests"   # un solo archivo
-> ```
+> 1. **Domain + tests**
+> 2. **Infrastructure + tests**
+> 3. **Application + tests**
+> 4. **Api + tests**
 >
-> **Regla de oro (TDD):** escribí el test ANTES de arreglar el código. El test debe fallar
-> (rojo) → después hacés que pase (verde) → y recién ahí refactorizás. Si el test pasa sin tocar
-> código, es porque no está probando lo que tiene que probar.
->
-> **Estilo:** xUnit. Cada test es `[Fact]` (o `[Theory]` + `[InlineData]` para variantes).
-> Aserts con **FluentAssertions** (`.Should().Be(...)`). Mocks con **Moq** (`Mock<I...>`).
-> Cada archivo se llama `NombreTests.cs` y vive en la carpeta espejo del proyecto `.Tests`.
+> No se avanza a la siguiente subtarea sin terminar la anterior y con sus tests en verde. El
+> módulo Auth/Tenants/Users ya está implementado y es la plantilla: Clean Architecture, CQRS sin
+> MediatR (`ExecuteAsync`), repos que devuelven la entidad o lanzan `KeyNotFoundException`, DTOs +
+> FluentValidation + AutoMapper, y tests xUnit + FluentAssertions + Moq + EF InMemory (TDD: rojo
+> → verde).
 
-### Prerrequisito para toda la capa Api (TEST-00)
+## Cómo leer una tarea
 
-`Program.cs` usa *top-level statements*: la clase `Program` generada es `internal` y
-`WebApplicationFactory<Program>` necesita verla. Agregá al final de `Program.cs` (o en un
-`Api/TestsMarker.cs` aparte):
+Cada tarea padre tiene esta forma:
+
+```text
+TAREA REC-xx · <cosa>
+  US: historia de usuario
+  Depende de: ...
+  ├── REC-xx.1  Domain + tests        -> entidades/enums/reglas + tests de dominio
+  ├── REC-xx.2  Infrastructure + tests -> EF config + repositorio + tests de repo
+  ├── REC-xx.3  Application + tests   -> DTOs/validators/mappings/interfaces/use cases + tests
+  └── REC-xx.4  Api + tests           -> controller + policy + tests de integración
+```
+
+El orden de ejecución recomendado es **por cosa en vertical**: se termina `REC-xx.1 → .4` antes de
+pasar a `REC-xx+1`. Algunas cosas triviales (catálogos) tienen subtareas cortas; las grandes
+(Job, Candidate, apply externo) tienen subtareas con varios use cases.
+
+## Convenciones de carpetas (plantilla a copiar por cosa)
+
+```text
+MateHR.Domain/Recruitment/
+├── Entities/
+├── Enums/
+├── Interfaces/          # IAreaRepository, IJobRepository...
+└── Common/              # validaciones compartidas del módulo
+
+MateHR.Application/Recruitment/
+├── Areas/               # 1 carpeta por recurso: Commands/Queries/DTOs/Validators/Interfaces/Mappings
+├── SubAreas/ Clients/ JobStatuses/ ProcessSteps/ SearchReasons/ CandidateProcessStatuses/
+├── Jobs/ Candidates/ SelectionProcesses/
+├── Public/              # apply externo
+├── Interfaces/          # servicios del módulo (IEmailService)
+├── Mappings/
+└── DependencyInjection.cs
+
+MateHR.Infrastructure/Persistance/
+├── Configurations/Recruitment/   # una config por entidad
+├── Repositories/                 # un repo por recurso
+└── Migrations/                   # AddRecruitmentModule
+
+MateHR.Api/Controllers/v1/Recruitment/   # uno por recurso
+MateHR.Api/Controllers/v1/Public/        # PublicJobsController
+```
+
+Tests (proyecto único `Tests/MateHR.Tests.csproj`, namespace por capa):
+
+```text
+Tests/Domain/Recruitment/**            -> MateHR.Domain.Tests.Recruitment.*
+Tests/Application/Recruitment/**       -> MateHR.Application.Tests.Recruitment.*
+Tests/Infrastructure/Recruitment/**    -> MateHR.Infrastructure.Tests.Recruitment.*
+Tests/Api/Recruitment/**               -> MateHR.Api.Tests.Recruitment.*
+```
+
+## Decisiones del módulo (DEC-REC)
+
+| # | Decisión | Detalle |
+|---|---|---|
+| DEC-REC-1 | **Todo es tenant-scoped** | Áreas, subáreas, clientes, estados, steps, search reasons, estados de proceso, jobs, candidatos y procesos tienen `TenantId`. Ninguna consulta puede cruzar tenants. |
+| DEC-REC-2 | **El tenant sale del `ITenantContext`** | El use case lee `ITenantContext.CurrentTenantId`; si es `null` lanza `UnauthorizedAccessException` (middleware → 403). El repositorio **siempre** recibe `tenantId` explícito y filtra por él. |
+| DEC-REC-3 | **Policies nuevas** | `RequireTenantAdmin` = rol `Admin`; `RequireRecruiter` = roles `Admin`, `Recruiter`. SuperAdmin es plataforma y **no** opera recruitment. |
+| DEC-REC-4 | **Catálogos con borrado referencial** | Si un catálogo está referenciado por un job/proceso, el borrado devuelve 409 (`EntityInUseException`). No hay borrado en cascada. |
+| DEC-REC-5 | **Steps ordenados por join** | El job guarda `JobStep { Id, JobId, ProcessStepId, Order }`. El orden es contiguo desde 1. |
+| DEC-REC-6 | **Borrado de job en 2 pasos** | El recruiter *solicita* (`DeletionRequestedAt`), el admin *confirma* (`DeletionConfirmedAt`, `IsActive=false`, soft delete). |
+| DEC-REC-7 | **Candidato externo** | El apply público crea el candidato si el mail no existe y lo marca `IsExternallyCreated=true`. Si existe, solo registra actividad. Dispara notificación/email. |
+| DEC-REC-8 | **`ProcessHistory` es derivado** | No se persiste: es la lista de `SelectionProcess` del candidato, que arma el query. |
+| DEC-REC-9 | **Teléfono `string`, DNI `int`** | `Dni` int (7-8 dígitos, > 0). `Phone` string (≤ 30) para no perder ceros ni desbordar `int`. |
+| DEC-REC-10 | **Coordenadas geográficas** | `Province` y `Country` son enums (`int`), empiezan en 1. `Country` arranca con set inicial; pendiente lista ISO completa. |
+| DEC-REC-11 | **Sin psychometric todavía** | El sub-módulo psicotécnico queda como bloque futuro; `SelectionProcess.StatusId` queda preparado para engancharlo. |
+
+## Mapa de tareas
+
+| Tarea | Cosa | Subtareas |
+|---|---|---|
+| REC-00 | Fundamentos del módulo (enums, guard, excepciones, EF base, DI, policies, middleware) | .1 Domain · .2 Infra · .3 App · .4 Api |
+| REC-01 | Estados de job (`JobStatus`) | .1 · .2 · .3 · .4 |
+| REC-02 | Áreas (`Area`) | .1 · .2 · .3 · .4 |
+| REC-03 | Subáreas (`SubArea`) | .1 · .2 · .3 · .4 |
+| REC-04 | Clientes (`Client`, interno/externo) | .1 · .2 · .3 · .4 |
+| REC-05 | Pasos de proceso (`ProcessStep`) | .1 · .2 · .3 · .4 |
+| REC-06 | Motivos de búsqueda (`SearchReason`) | .1 · .2 · .3 · .4 |
+| REC-07 | Estados de proceso de candidato (`CandidateProcessStatus`) | .1 · .2 · .3 · .4 |
+| REC-08 | Job/empleo (CRUD, estados, notas, steps, borrado 2 pasos, cierre) | .1 · .2 · .3 · .4 |
+| REC-09 | Candidatos (CRUD interno + historial) | .1 · .2 · .3 · .4 |
+| REC-10 | Procesos de selección (`SelectionProcess`) | .1 · .2 · .3 · .4 |
+| REC-11 | Portal externo (apply) + notificación/email | .1 · .2 · .3 · .4 |
+
+---
+
+# TAREA REC-00 · Fundamentos del módulo
+
+**US:** Como equipo quiero la base del módulo (enums, validaciones, excepciones, persistencia
+común, DI y policies) para poder construir cada cosa sobre cimientos firmes.
+
+**Depende de:** — (el módulo Auth/Tenants/Users ya existe)
+
+## Subtarea REC-00.1 — Domain + tests
+
+**Estado:** ✅ Completado (2026-10-23).
+
+**Decisiones tomadas:**
+- `Country` queda con `Argentina = 1` (alcance inicial; sin lista ISO por ahora).
+- `SeniorityLevel` incluye `Expert = 5` y `Principal = 6`.
+- Las excepciones quedan en `MateHR.Domain/Recruitment/Exceptions` (namespace `MateHR.Domain.Recruitment.Exceptions`).
+- `JobAlreadyClosedException : InvalidOperationException`, para que el cierre duplicado siga siendo 409 vía middleware.
+
+**Archivos:** `MateHR.Domain/Recruitment/Enums/{SeniorityLevel,ClientType,Province,Country}.cs`,
+`MateHR.Domain/Recruitment/Common/RecruitmentGuard.cs`,
+`MateHR.Domain/Recruitment/Exceptions/{EntityInUseException,DuplicateEntityNameException,JobAlreadyClosedException}.cs`.
+
+**Código:**
 
 ```csharp
-public partial class Program { }
-```
-
-Sin esto, los tests de integración de `MateHR.Api.Tests` no compilan.
-
-### Estructura de archivos esperada (dónde va cada test)
-
-```
-MateHR.Domain.Tests/
-  Common/SlugGeneratorTests.cs, PagedResultTests.cs
-  Tenants/Entities/TenantTests.cs
-  Tenants/ValueObjects/AddressTests.cs
-  Tenants/Enums/IndustryEnumTests.cs
-  Users/Entities/UserTests.cs, RefreshTokenTests.cs
-  Exceptions/ExceptionsTests.cs
-MateHR.Application.Tests/
-  Common/MappingConfigurationTests.cs
-  Tenants/Commands/CreateTenantTests.cs, UpdateTenantTests.cs,
-              ChangeStatusTenantTests.cs, ChangeRecruitmentModeTenantTests.cs,
-              ChangeSubscriptionTypeTenantTests.cs
-  Tenants/Queries/GetTenantsTests.cs, GetTenantByIdTests.cs, GetTenantBySlugTests.cs
-  Tenants/Validators/CreateTenantDtoValidatorTests.cs, GetTenantsRequestValidatorTests.cs
-  Users/Commands/LoginUserTests.cs, RefreshAccessTokenTests.cs,
-              CreateUserTests.cs, LogoutUserTests.cs
-  Users/Queries/GetCurrentUserTests.cs
-  Users/Services/UserProvisioningServiceTests.cs
-  Users/Validators/CreateUserRequestValidatorTests.cs, LoginRequestValidatorTests.cs
-MateHR.Infrastructure.Tests/
-  Persistance/Repositories/TenantRepositoryTests.cs, UserRepositoryTests.cs,
-                  RefreshTokenRepositoryTests.cs
-  Authentication/PasswordHasherTests.cs, JwtServiceTests.cs, RefreshTokenServiceTests.cs
-  Services/TenantContextTests.cs, UserSecurityStampValidatorTests.cs
-MateHR.Api.Tests/
-  Controllers/v1/AuthControllerTests.cs, TenantsControllerTests.cs, UsersControllerTests.cs
-  Middleware/ExceptionMiddlewareTests.cs
-```
-
----
-
-## Bloque 5a — Domain (tests puros, sin mocks)
-
-#### TEST-01 · `SlugGeneratorTests`
-
-**Archivo:** `MateHR.Domain.Tests/Common/SlugGeneratorTests.cs`
-**Depende de:** —
-
-Probar el generador de slugs. Mirá el código y vas a ver la lógica: pasa a minúsculas, espacios
-→ `-`, elimina todo lo que no sea ascii letra/dígito o `-`, colapsa `--` repetidos y recorta
-guiones de los bordes. Lanza `ArgumentException` si entra null/vacío o si el nombre no genera
-slug (ej. `"!!!"`).
-
-**Casos:**
-- `"Empresa Tech SA"` → `"empresa-tech-sa"`
-- `"  Empresa   Otra  "` → `"empresa-otra"` (colapsa espacios y guiones, trima bordes)
-- `"Café"` → `"caf"` (**trampa:** la `é` no es ascii, se tira; quedate atento a que no rompa el código de producción, testealo y listo)
-- `"123"` → `"123"`
-- `"a--b"` → `"a-b"`
-- `Generate(null)`, `Generate("")`, `Generate("   ")` → `ArgumentException`
-- `Generate("!!!")` → `ArgumentException`
-
-**Aceptación**
-- [ ] Cubre minúsculas, espacios, caracteres raros, colapso de guiones y casos de error
-- [ ] Usa `[Theory]`/`[InlineData]` para los casos de transformación
-
----
-
-#### TEST-02 · `PagedResultTests`
-
-**Archivo:** `MateHR.Domain.Tests/Common/PagedResultTests.cs`
-
-Resultado paginado genérico. Fijate en `PagedResult.cs`: calcula `TotalPages` con redondeo hacia
-arriba, `HasPreviousPage = PageNumber > 1`, `HasNextPage = PageNumber < TotalPages`, y valida que
-`pageNumber` y `pageSize` sean ≥ 1.
-
-**Casos:**
-- 10 ítems, page 1, size 20 → `TotalPages == 1`, `HasNextPage == false`
-- 50 ítems, page 1, size 20 → `TotalPages == 3`
-- `TotalCount == 0` → `TotalPages == 0`
-- page 2 de 3 → `HasPreviousPage == true` y `HasNextPage == true`
-- `pageNumber = 0` → `ArgumentOutOfRangeException`; `pageSize = 0` → `ArgumentOutOfRangeException`
-- `Items` guarda la lista que se le pasa
-
----
-
-#### TEST-03 · `TenantTests`
-
-**Archivo:** `MateHR.Domain.Tests/Tenants/Entities/TenantTests.cs`
-
-Entidad `Tenant`. El constructor valida todo (enums con `ValidateEnum`, nombre obligatorio y ≤ 200,
-CUIT de 11 dígitos, email válido y ≤ 320, slug normalizado) y los setters son privados: los cambios
-van por `ChangeStatus`, `ChangeRecruitmentMode`, `ChangeSubscriptionType` y `Update`. Vamos a
-escribir un test por validación y por método de cambio, siempre con el patrón:
-*nombre del test → datos que le pasamos → qué procesamos → qué resultado esperamos*.
-
-**Tests del constructor:**
-
-- Vamos a generar un test llamado **`Constructor_ValidData_SetsDefaults`**. Le pasamos
-  `name = "  Acme Corp  "`, `slug = "Mi Empresa"`, `cuit = "20304050601"`,
-  `ownerEmail = "owner@acme.com"`, `industry = Technology`, `address = null`,
-  `status = Active`, `recruitmentMode = Internal`, `subscriptionType = Free`. Vamos a procesar
-  la información construyendo `new Tenant(...)` y esperamos que no lance nada, que `Id` no sea
-  `Guid.Empty`, que `Name == "Acme Corp"` (trimmeado), que `Slug == "mi-empresa"` (normalizado por
-  `SlugGenerator`), que `Status`, `RecruitmentMode` y `SubscriptionType` queden con los valores que
-  pasamos, que `SubscriptionStatus == None`, `SubscriptionExpiresAt == null` y que `CreatedAt`
-  esté seteado cerca de `DateTimeOffset.UtcNow`.
-
-- Vamos a generar un test llamado **`Constructor_WhitespaceName_ThrowsArgumentException`**.
-  Le pasamos un `name = "   "` y todo lo demás válido; vamos a procesar el `new Tenant(...)`
-  y esperamos que lance `ArgumentException` con `ParamName == "name"`.
-
-- Vamos a generar un test llamado **`Constructor_NameExceedsMaxLength_ThrowsArgumentException`**.
-  Le pasamos un `name` de 201 caracteres (`new string('a', 201)`) y el resto válido; procesamos el
-  constructor y esperamos `ArgumentException` cuyo mensaje mencione los 200 caracteres.
-
-- Vamos a generar un test llamado **`Constructor_WhitespaceSlug_ThrowsArgumentException`**.
-  Le pasamos `slug = ""` y el resto válido; procesamos el constructor y esperamos
-  `ArgumentException` con `ParamName == "slug"`.
-
-- Vamos a generar un test llamado **`Constructor_SlugWithoutValidAscii_ThrowsArgumentException`**.
-  Le pasamos `slug = "!!!"` (no genera ningún slug) y el resto válido; procesamos el constructor y
-  esperamos `ArgumentException`, porque `SlugGenerator.Generate` explota antes de llegar a
-  `NormalizeSlug`.
-
-- Vamos a generar un test llamado **`Constructor_CuitWithLetters_ThrowsArgumentException`**.
-  Le pasamos `cuit = "20A30405061"` (11 caracteres pero con una letra) y el resto válido;
-  procesamos el constructor y esperamos `ArgumentException` con
-  `ParamName == "cuit"`.
-
-- Vamos a generar un test llamado **`Constructor_CuitWrongLength_ThrowsArgumentException`**.
-  Le pasamos `cuit = "2030405060"` (10 dígitos) y el resto válido; procesamos el constructor y
-  esperamos `ArgumentException`. Podemos escribirlo como `[Theory]` con `[InlineData]` para 10 y 12
-  dígitos.
-
-- Vamos a generar un test llamado **`Constructor_InvalidEmail_ThrowsArgumentException`**.
-  Le pasamos `ownerEmail = "no-es-un-email"` y el resto válido; procesamos el constructor y
-  esperamos `ArgumentException` con `ParamName == "ownerEmail"` (lo rechaza
-  `MailAddress.TryCreate`).
-
-- Vamos a generar un test llamado **`Constructor_UndefinedIndustry_ThrowsArgumentOutOfRangeException`**.
-  Le pasamos `industry = (Industry)999` y el resto válido; procesamos el constructor y esperamos
-  `ArgumentOutOfRangeException`, porque `ValidateEnum` chequea `Enum.IsDefined`. Repetimos la misma
-  historia con **`Constructor_UndefinedStatus_...`**, **`Constructor_UndefinedRecruitmentMode_...`**
-  y **`Constructor_UndefinedSubscriptionType_...`**, pasando `(TenantStatus)999`,
-  `(RecruitmentMode)999` y `(SubscriptionType)999` respectivamente.
-
-**Tests de los métodos de cambio:**
-
-- Vamos a generar un test llamado **`ChangeStatus_ValidStatus_ChangesStatus`**. Le pasamos a un
-  tenant construido con `Status = Active` el valor `TenantStatus.Suspended`; procesamos
-  `tenant.ChangeStatus(TenantStatus.Suspended)` y esperamos que `tenant.Status` quede en
-  `Suspended` (y que el resto de las propiedades no cambie).
-
-- Vamos a generar un test llamado **`ChangeStatus_UndefinedStatus_ThrowsArgumentOutOfRangeException`**.
-  Le pasamos `(TenantStatus)999` a un tenant vivo; procesamos `ChangeStatus(...)` y esperamos
-  `ArgumentOutOfRangeException` y que `Status` siga siendo el original (el método valida antes de
-  asignar).
-
-- Vamos a generar un test llamado **`ChangeRecruitmentMode_ValidMode_ChangesMode`**. Le pasamos
-  `RecruitmentMode.External` a un tenant que arranca en `Internal`; procesamos
-  `ChangeRecruitmentMode(...)` y esperamos que `RecruitmentMode == External`.
-
-- Vamos a generar un test llamado **`ChangeRecruitmentMode_UndefinedMode_ThrowsArgumentOutOfRangeException`**.
-  Le pasamos `(RecruitmentMode)999`; procesamos el método y esperamos
-  `ArgumentOutOfRangeException`.
-
-- Vamos a generar un test llamado **`ChangeSubscriptionType_ValidType_ResetsSubscriptionStatusAndExpiry`**.
-  Le pasamos `SubscriptionType.Monthly` a un tenant `Free`; procesamos
-  `ChangeSubscriptionType(SubscriptionType.Monthly)` y esperamos que `SubscriptionType == Monthly`,
-  que `SubscriptionStatus` siga en `None` y que `SubscriptionExpiresAt` quede en `null` (el método
-  siempre resetea la suscripción vieja: es el invariante que queremos fijar aunque arranque igual).
-
-- Vamos a generar un test llamado **`ChangeSubscriptionType_UndefinedType_ThrowsArgumentOutOfRangeException`**.
-  Le pasamos `(SubscriptionType)999`; procesamos el método y esperamos
-  `ArgumentOutOfRangeException` y que `SubscriptionType` no cambie.
-
-- Vamos a generar un test llamado **`Update_ValidData_UpdatesAllFields`**. Le pasamos
-  `name = "  Nueva Empresa  "`, `slug = "Nueva Empresa"`, `cuit = "11222333444"`,
-  `ownerEmail = "nuevo@empresa.com"`, `industry = Finance` y un `Address` con valores nuevos;
-  procesamos `tenant.Update(...)` y esperamos que `Name == "Nueva Empresa"` (trimmeado),
-  `Slug == "nueva-empresa"` (normalizado), `CUIT`, `OwnerEmail`, `Industry` y `Address` actualizados,
-  y que `Status`/`SubscriptionType` no se toquen.
-
-- Vamos a generar un test llamado **`Update_WhitespaceName_ThrowsArgumentException`**. Le pasamos
-  `name = "   "` al `Update`; procesamos y esperamos `ArgumentException`, y de paso verificamos que
-  el tenant quedó igual que antes (la validación corta antes de asignar).
-
-- Vamos a generar un test llamado **`Update_InvalidEmail_ThrowsArgumentException`**. Le pasamos
-  `ownerEmail = "abc"`; procesamos y esperamos `ArgumentException`.
-
-- Vamos a generar un test llamado **`Update_UndefinedIndustry_ThrowsArgumentOutOfRangeException`**.
-  Le pasamos `(Industry)999`; procesamos y esperamos `ArgumentOutOfRangeException`.
-
-**Aceptación**
-- [ ] Cubre las validaciones del constructor (nombre, slug, CUIT, email y los 4 enums)
-- [ ] Cubre los 4 métodos de cambio, incluyendo el reset de `SubscriptionStatus`/`SubscriptionExpiresAt`
-- [ ] Usa `[Theory]`/`[InlineData]` para las variantes de CUIT y de enums
-
----
-
-#### TEST-04 · `UserTests`
-
-**Archivo:** `MateHR.Domain.Tests/Users/Entities/UserTests.cs`
-
-Entidad `User`. Las invariantes del constructor: `SuperAdmin` **no** puede tener `TenantId`, cualquier
-otro rol **debe** tenerlo, `Guid.Empty` siempre es inválido y el email se normaliza a minúsculas con
-trim. Los métodos de ciclo de vida: `RecordLogin`, `ChangePassword`, `Deactivate`, `Activate` y
-`CanAuthenticate`.
-
-**Tests del constructor:**
-
-- Vamos a generar un test llamado **`Constructor_ValidUserWithTenant_InitializesUser`**. Le pasamos
-  `firstName = "Ana"`, `lastName = "Pérez"`, `email = "ana@acme.com"`, `passwordHash = "hash-123"`,
-  `role = Recruiter` y `tenantId = Guid.NewGuid()`; procesamos `new User(...)` y esperamos que no
-  lance, que `Id` no sea `Guid.Empty`, que `Role == Recruiter`, que `TenantId` sea el que pasamos,
-  que `IsActive == true`, que `SecurityStamp` no sea `Guid.Empty` y que `CreatedAt` esté seteado.
-
-- Vamos a generar un test llamado **`Constructor_SuperAdminWithTenant_ThrowsArgumentException`**.
-  Le pasamos `role = SuperAdmin` y `tenantId = Guid.NewGuid()`; procesamos el constructor y esperamos
-  `ArgumentException` con `ParamName == "tenantId"`.
-
-- Vamos a generar un test llamado **`Constructor_RoleWithoutTenant_ThrowsArgumentException`**.
-  Le pasamos `role = Admin` y `tenantId = null`; procesamos el constructor y esperamos
-  `ArgumentException` con `ParamName == "tenantId"`.
-
-- Vamos a generar un test llamado **`Constructor_TenantIdEmpty_ThrowsArgumentException`**. Le pasamos
-  `role = Employee` y `tenantId = Guid.Empty`; procesamos el constructor y esperamos
-  `ArgumentException` (el chequeo de `Guid.Empty` va antes que el de "rol sin tenant", así que
-  pasamos un rol común para que entre por esa rama).
-
-- Vamos a generar un test llamado **`Constructor_UndefinedRole_ThrowsArgumentOutOfRangeException`**.
-  Le pasamos `role = (UserRole)999` y `tenantId = Guid.NewGuid()`; procesamos y esperamos
-  `ArgumentOutOfRangeException`.
-
-- Vamos a generar un test llamado **`Constructor_MixedCaseEmail_NormalizesToLowercase`**. Le pasamos
-  `email = "  ANA.PEREZ@ACME.COM  "`; procesamos el constructor y esperamos que
-  `Email == "ana.perez@acme.com"` (trim + `ToLowerInvariant`).
-
-- Vamos a generar un test llamado **`Constructor_WhitespaceFirstName_ThrowsArgumentException`**.
-  Le pasamos `firstName = "  "`; procesamos y esperamos `ArgumentException` con
-  `ParamName == "firstName"`. Repetimos la historia con
-  **`Constructor_WhitespaceLastName_...`** y **`Constructor_WhitespacePasswordHash_...`**
-  (le pasamos `passwordHash = ""` y esperamos `ArgumentException` con `ParamName == "passwordHash"`).
-
-**Tests de ciclo de vida:**
-
-- Vamos a generar un test llamado **`RecordLogin_ValidMoment_UpdatesLastLoginAt`**. Le pasamos a un
-  user recién creado un `moment = DateTimeOffset.UtcNow.AddMinutes(1)`; procesamos
-  `user.RecordLogin(moment)` y esperamos que `LastLoginAt == moment` y `UpdatedAt == moment`.
-
-- Vamos a generar un test llamado **`RecordLogin_MomentBeforeCreatedAt_ThrowsArgumentOutOfRangeException`**.
-  Le pasamos `moment = user.CreatedAt.AddSeconds(-1)`; procesamos `RecordLogin(moment)` y esperamos
-  `ArgumentOutOfRangeException` y que `LastLoginAt` siga en `null`.
-
-- Vamos a generar un test llamado **`ChangePassword_NewHash_UpdatesHashAndRegeneratesSecurityStamp`**.
-  Le pasamos `newPasswordHash = "hash-nuevo"` a un user con `SecurityStamp` original; procesamos
-  `user.ChangePassword("hash-nuevo")` y esperamos que `PasswordHash == "hash-nuevo"`, que
-  `SecurityStamp` haya cambiado (es el punto: invalida sesiones viejas) y que `UpdatedAt` esté
-  seteado.
-
-- Vamos a generar un test llamado **`ChangePassword_WhitespaceHash_ThrowsArgumentException`**.
-  Le pasamos `newPasswordHash = "   "`; procesamos y esperamos `ArgumentException`, y que ni el hash
-  ni el `SecurityStamp` hayan cambiado.
-
-- Vamos a generar un test llamado **`Deactivate_ActiveUser_DeactivatesAndRegeneratesStamp`**. Le
-  pasamos un user activo `moment = DateTimeOffset.UtcNow`; procesamos `user.Deactivate(moment)` y
-  esperamos `IsActive == false`, un `SecurityStamp` distinto al original y `UpdatedAt == moment`.
-
-- Vamos a generar un test llamado **`Deactivate_AlreadyInactive_ThrowsInvalidOperationException`**.
-  Le pasamos un user que ya está inactivo (lo desactivamos primero en el setup); procesamos
-  `Deactivate(moment)` y esperamos `InvalidOperationException`.
-
-- Vamos a generar un test llamado **`Activate_InactiveUser_ActivatesAndRegeneratesStamp`**. Le
-  pasamos un user inactivo; procesamos `Activate(moment)` y esperamos `IsActive == true`,
-  `SecurityStamp` regenerado y `UpdatedAt == moment`.
-
-- Vamos a generar un test llamado **`Activate_AlreadyActive_ThrowsInvalidOperationException`**. Le
-  pasamos un user activo; procesamos `Activate(moment)` y esperamos `InvalidOperationException`.
-
-- Vamos a generar un test llamado **`CanAuthenticate_ActiveUser_ReturnsTrue`**. Le pasamos un user
-  recién creado; procesamos `user.CanAuthenticate()` y esperamos `true`.
-
-- Vamos a generar un test llamado **`CanAuthenticate_InactiveUser_ReturnsFalse`**. Le pasamos un user
-  que desactivamos antes; procesamos `CanAuthenticate()` y esperamos `false`.
-
-**Aceptación**
-- [ ] Cubre las invariantes SuperAdmin/sin tenant, rol/tenant obligatorio y `Guid.Empty`
-- [ ] Cubre `RecordLogin`, `ChangePassword`, `Deactivate`, `Activate` y `CanAuthenticate`
-- [ ] Cubre la normalización del email a minúsculas
-
----
-
-#### TEST-05 · `RefreshTokenTests`
-
-**Archivo:** `MateHR.Domain.Tests/Users/Entities/RefreshTokenTests.cs`
-
-`RefreshToken` es el corazón de la rotación: valida en el constructor, `Revoke` es idempotente,
-`ReplaceWith` marca el reemplazo y `IsActive` decide si el token sirve.
-
-- Vamos a generar un test llamado **`Constructor_ValidData_CreatesToken`**. Le pasamos
-  `userId = Guid.NewGuid()`, `tokenHash = "abc123"`, `createdAt = DateTimeOffset.UtcNow` y
-  `expiresAt = createdAt.AddDays(14)`; procesamos `new RefreshToken(...)` y esperamos que no lance,
-  que `Id` no sea `Guid.Empty`, que `UserId` y `TokenHash` se guarden tal cual, que `RevokedAt` y
-  `ReplacedAt` arranquen en `null` y que `ExpiresAt`/`CreatedAt` coincidan con lo que pasamos.
-
-- Vamos a generar un test llamado **`Constructor_EmptyUserId_ThrowsArgumentException`**. Le pasamos
-  `userId = Guid.Empty`; procesamos el constructor y esperamos `ArgumentException` con
-  `ParamName == "userId"`.
-
-- Vamos a generar un test llamado **`Constructor_ExpiresAtBeforeCreatedAt_ThrowsArgumentOutOfRangeException`**.
-  Le pasamos `createdAt = now` y `expiresAt = now.AddMinutes(-1)`; procesamos el constructor y
-  esperamos `ArgumentOutOfRangeException` con `ParamName == "expiresAt"`.
-
-- Vamos a generar un test llamado **`Constructor_ExpiresAtEqualsCreatedAt_ThrowsArgumentOutOfRangeException`**.
-  Le pasamos `expiresAt == createdAt`; procesamos el constructor y esperamos
-  `ArgumentOutOfRangeException` (la condición es `<=`, ojo con el igual: es el caso tramposo).
-
-- Vamos a generar un test llamado **`Constructor_WhitespaceTokenHash_ThrowsArgumentException`**. Le
-  pasamos `tokenHash = ""`; procesamos y esperamos `ArgumentException` con `ParamName == "tokenHash"`.
-
-- Vamos a generar un test llamado **`Constructor_TokenHashTooLong_ThrowsArgumentException`**. Le
-  pasamos un `tokenHash` de 65 caracteres (`new string('a', 65)`, el máximo es 64); procesamos y
-  esperamos `ArgumentException`.
-
-- Vamos a generar un test llamado **`Revoke_ValidMoment_SetsRevokedAt`**. Le pasamos a un token vivo
-  `moment = DateTimeOffset.UtcNow`; procesamos `token.Revoke(moment)` y esperamos
-  `RevokedAt == moment`.
-
-- Vamos a generar un test llamado **`Revoke_Twice_KeepsOriginalRevokedAt`** — *el caso tramposo*.
-  Le pasamos `moment1` en la primera llamada y `moment2 = moment1.AddMinutes(5)` en la segunda;
-  procesamos `Revoke(moment1)` y después `Revoke(moment2)` y esperamos que `RevokedAt == moment1`
-  (el segundo llamado tiene que salir por el `return` sin pisar la fecha).
-
-- Vamos a generar un test llamado **`ReplaceWith_SetsRevokedAtAndReplacedAt`**. Le pasamos
-  `moment = DateTimeOffset.UtcNow`; procesamos `token.ReplaceWith(moment)` y esperamos
-  `RevokedAt == moment` y `ReplacedAt == moment`.
-
-- Vamos a generar un test llamado **`IsActive_ActiveToken_ReturnsTrue`**. Le pasamos un token con
-  `expiresAt = now.AddDays(1)` y un `moment = now`; procesamos `token.IsActive(moment)` y esperamos
-  `true`.
-
-- Vamos a generar un test llamado **`IsActive_RevokedToken_ReturnsFalse`**. Le pasamos un token que
-  revocamos con `Revoke(now)` y un `moment = now.AddMinutes(1)` (antes de expirar); procesamos
-  `IsActive(moment)` y esperamos `false` — el token sigue vigente en el tiempo pero ya fue
-  revocado.
-
-- Vamos a generar un test llamado **`IsActive_ExpiredToken_ReturnsFalse`**. Le pasamos un token con
-  `expiresAt = now` y `moment = now.AddSeconds(1)`; procesamos `IsActive(moment)` y esperamos
-  `false`.
-
-**Aceptación**
-- [ ] Cubre las 5 validaciones del constructor (userId, expiración, hash vacío, hash largo)
-- [ ] Cubre la idempotencia de `Revoke` con fechas distintas
-- [ ] Cubre `IsActive` en los 3 estados: vigente, revocado y expirado
-
----
-
-#### TEST-06 · `ExceptionsTests`
-
-**Archivo:** `MateHR.Domain.Tests/Exceptions/ExceptionsTests.cs`
-
-Las tres excepciones de dominio son contrato: mensaje y propiedad expuesta. Son tests cortitos pero
-nos protegen de cambios silenciosos.
-
-- Vamos a generar un test llamado **`SlugAlreadyExistsException_Slug_ContainsSlugAndExposesProperty`**.
-  Le pasamos `slug = "acme-corp"`; procesamos `new SlugAlreadyExistsException("acme-corp")` y
-  esperamos que `.Message` contenga `"acme-corp"` y que `.Slug == "acme-corp"`.
-
-- Vamos a generar un test llamado **`EmailAlreadyExistsException_Email_ContainsEmailAndExposesProperty`**.
-  Le pasamos `email = "ana@acme.com"`; procesamos `new EmailAlreadyExistsException(...)` y esperamos
-  que `.Message` contenga `"ana@acme.com"` y que `.Email == "ana@acme.com"`.
-
-- Vamos a generar un test llamado **`InvalidCredentialsException_DefaultMessage_ReturnsDefaultText`**.
-  Le pasamos nada (constructor sin argumentos); procesamos `new InvalidCredentialsException()` y
-  esperamos que `.Message == "Las credenciales son invalidas."`.
-
-- Vamos a generar un test llamado **`InvalidCredentialsException_CustomMessage_ReturnsCustomMessage`**.
-  Le pasamos `message = "El usuario esta inactivo."`; procesamos y esperamos que `.Message` sea
-  exactamente ese string (el overload custom no se pisa con el default).
-
-**Aceptación**
-- [ ] Mensajes y propiedades verificadas para las 3 excepciones
-
----
-
-#### TEST-07 · `AddressTests` y `IndustryEnumTests` (rápidos)
-
-**Archivos:** `MateHR.Domain.Tests/Tenants/ValueObjects/AddressTests.cs` y
-`MateHR.Domain.Tests/Tenants/Enums/IndustryEnumTests.cs`
-
-- Vamos a generar un test llamado **`NewInstance_DefaultsAreEmptyStrings`** en `AddressTests`. Le
-  pasamos nada (creamos `new Address()`); procesamos la instancia nueva y esperamos que las 5
-  propiedades (`Street`, `City`, `State`, `Country`, `PostalCode`) arranquen en `string.Empty`, no
-  en `null`.
-
-- Vamos a generar un test llamado **`Industry_Technology_IsZero`** en `IndustryEnumTests`. Le
-  pasamos `Industry.Technology`; procesamos `(int)Industry.Technology` y esperamos `0` — es una
-  decisión deliberada (Decisión 7) y si alguien renumera el enum rompe contratos de API y base.
-
-- Vamos a generar un test llamado **`TenantStatus_Active_IsOne`**. Le pasamos
-  `TenantStatus.Active`; procesamos `(int)` y esperamos `1` (que no arranque en 0, así el default
-  no es un estado "mágico").
-
-- Vamos a generar un test llamado **`UserRole_SuperAdmin_IsOne`**, **`RecruitmentMode_Internal_IsOne`**
-  y **`SubscriptionType_Free_IsOne`**: misma historia, les pasamos cada valor inicial del enum,
-  procesamos el cast a `int` y esperamos `1`.
-
-- Vamos a generar un test llamado **`SubscriptionStatus_None_IsZero`**. Le pasamos
-  `SubscriptionStatus.None`; procesamos y esperamos `0` — acá `None = 0` sí es intencional (es el
-  "sin suscripción"), a diferencia de los otros enums.
-
-**Aceptación**
-- [ ] `Address` defaults en `string.Empty`
-- [ ] Los enums fijan sus valores numéricos (los que son contrato de API)
-
----
-
-## Bloque 5b — Application (use cases con Moq + AutoMapper real)
-
-Consejo general para esta capa: usá **mocks de Moq** para las interfaces de repositorio y
-servicios (`ITenantRepository`, `IUserRepository`, `IPasswordHasher`, `IJwtService`, etc.) y **el
-mapper real de AutoMapper** (no lo mockees) armado con los profiles:
-
-```csharp
-var mapperConfiguration = new MapperConfiguration(cfg =>
+namespace MateHR.Domain.Recruitment.Enums
 {
-    cfg.AddProfile<TenantMapping>();
-    cfg.AddProfile<UserMapping>();
-});
-var mapper = mapperConfiguration.CreateMapper();
-```
+    // Empiezan en 1 (convención: el 0 no es un estado válido por accidente).
+    public enum SeniorityLevel { Trainee = 1, Junior = 2, SemiSenior = 3, Senior = 4, Expert = 5, Principal = 6 }
 
-Y los validators reales de FluentValidation (`new CreateTenantDtoValidator()`, etc.), así
-probás las reglas de negocio de verdad, no un stub que devuelve "siempre válido".
+    public enum ClientType { Internal = 1, External = 2 }
 
-#### TEST-08 · `MappingConfigurationTests`
-
-**Archivo:** `MateHR.Application.Tests/Common/MappingConfigurationTests.cs`
-
-Antes de cualquier test de use case, queremos un guardián que nos diga si los mapeos están bien
-definidos.
-
-- Vamos a generar un test llamado **`TenantMapping_AssertConfigurationIsValid_Passes`**. Le pasamos
-  una `MapperConfiguration` con `cfg.AddProfile<TenantMapping>()`; procesamos
-  `.AssertConfigurationIsValid()` y esperamos que no lance `AutoMapperConfigurationException`
-  (si lanza, algún miembro de `Tenant`/`TenantResponse` quedó sin mapear).
-
-- Vamos a generar un test llamado **`UserMapping_AssertConfigurationIsValid_Passes`**. Le pasamos
-  una `MapperConfiguration` con `cfg.AddProfile<UserMapping>()`; procesamos
-  `.AssertConfigurationIsValid()` y esperamos que no lance.
-
-- Vamos a generar un test llamado **`Map_TenantToTenantResponse_MapsProperties`**. Le pasamos un
-  `Tenant` construido con datos conocidos y los **dos** profiles juntos (por `PagedResult<T>`
-  necesita `TenantMapping`); procesamos `mapper.Map<TenantResponse>(tenant)` y esperamos que
-  `Id`, `Name`, `Slug`, `CUIT`, `OwnerEmail`, `Industry`, `Status`, `RecruitmentMode`,
-  `SubscriptionType` y `CreatedAt` lleguen con los mismos valores.
-
-- Vamos a generar un test llamado **`Map_AddressDtoToAddress_MapsProperties`** (y su espejo
-  **`Map_AddressToAddressDto_...`**). Le pasamos un `AddressDto` con calle/ciudad/etc. llenos;
-  procesamos `mapper.Map<Address>(dto)` y esperamos que las 5 propiedades se copien una a una.
-
-- Vamos a generar un test llamado **`Map_PagedResultOfTenantToPagedResultOfTenantResponse_MapsItems`**.
-  Le pasamos un `PagedResult<Tenant>` con 2 ítems, `pageNumber = 1`, `pageSize = 20`,
-  `totalCount = 2`; procesamos `mapper.Map<PagedResult<TenantResponse>>(paged)` y esperamos que
-  `Items` tenga 2 elementos mapeados y que `PageNumber`/`PageSize`/`TotalCount` se conserven
-  (acá se confirma la trampa del constructor de `PagedResult<T>`).
-
-**Aceptación**
-- [ ] `AssertConfigurationIsValid` pasa para ambos profiles
-- [ ] Mapeos puntuales verificados, incluido `PagedResult<T>`
-
----
-
-#### TEST-09 · `CreateTenantTests`
-
-**Archivo:** `MateHR.Application.Tests/Tenants/Commands/CreateTenantTests.cs`
-
-`CreateTenant.ExecuteAsync` hace: validar DTO → trimmer el nombre → generar slug → chequear slug
-duplicado → construir entidad → persistir → mapear respuesta. Mockeamos `ITenantRepository`, usamos
-el mapper real y `new CreateTenantDtoValidator()`.
-
-- Vamos a generar un test llamado **`ExecuteAsync_ValidDto_CreatesTenantWithGeneratedSlug`**. Le
-  pasamos un `CreateTenantDto` válido: `Name = "Acme Corp"`, `CUIT = "20304050601"`,
-  `OwnerEmail = "owner@acme.com"`, `Industry = Technology`, `Address = null`; le decimos al mock
-  `ExistsBySlugAsync("acme-corp", null, _) → false` y `CreateTenantAsync(...) → la misma entidad`.
-  Vamos a procesar `ExecuteAsync(dto)` y esperamos que devuelva un `TenantResponse` con los campos
-  mapeados (`Name == "Acme Corp"`, `Slug == "acme-corp"`); además verificamos con
-  `mock.Verify(...)` que `CreateTenantAsync` se llamó con una entidad que tenga
-  `Slug == "acme-corp"`, `Status == Active`, `RecruitmentMode == Internal` y
-  `SubscriptionType == Free`.
-
-- Vamos a generar un test llamado **`ExecuteAsync_DuplicateSlug_ThrowsSlugAlreadyExistsException`**.
-  Le pasamos el mismo DTO válido, pero le decimos al mock `ExistsBySlugAsync("acme-corp", null, _) → true`;
-  procesamos `ExecuteAsync(dto)` y esperamos `SlugAlreadyExistsException` con `.Slug == "acme-corp"`,
-  y verificamos que `CreateTenantAsync` **nunca** se llamó (`Times.Never`).
-
-- Vamos a generar un test llamado **`ExecuteAsync_EmptyName_ThrowsValidationException`**. Le
-  pasamos un DTO con `Name = ""` (el resto puede ser basura); procesamos `ExecuteAsync(dto)` y
-  esperamos `FluentValidation.ValidationException` (la corta el validator, antes de tocar el repo:
-  verificamos `Times.Never` sobre cualquier método del repositorio).
-
-- Vamos a generar un test llamado **`ExecuteAsync_NullIndustry_ThrowsValidationException`**. Le
-  pasamos un DTO con `Industry = null`; procesamos `ExecuteAsync(dto)` y esperamos
-  `ValidationException` — recordá la decisión de negocio: `Industry` es `NotNull`, no tiene default.
-
-- Vamos a generar un test llamado **`ExecuteAsync_InvalidCuit_ThrowsValidationException`**. Le
-  pasamos un DTO con `CUIT = "20-30405060-1"` (con guiones); procesamos y esperamos
-  `ValidationException` porque el validator pide `Length(11)` + `Matches("^[0-9]+$")`.
-
-- Vamos a generar un test llamado **`ExecuteAsync_NameWithSpaces_TrimsNameBeforeCreating`**. Le
-  pasamos `Name = "  Acme Corp  "`; procesamos `ExecuteAsync(dto)` y esperamos que la entidad que
-  llega a `CreateTenantAsync` tenga `Name == "Acme Corp"` y `Slug == "acme-corp"` (el trim ocurre
-  antes de generar el slug: si no lo trimmea, el slug tendría guiones de más).
-
-**Aceptación**
-- [ ] Cubre happy path con verificaciones de argumentos (`Verify`)
-- [ ] Cubre slug duplicado, validación de DTO y nombre trimmeado
-
----
-
-#### TEST-10 · `UpdateTenantTests`
-
-**Archivo:** `MateHR.Application.Tests/Tenants/Commands/UpdateTenantTests.cs`
-
-Mismo esquema que `CreateTenant` pero con un paso más: primero `GetTenantByIdAsync`, y el chequeo de
-slug duplicado va **excluyendo el propio id**.
-
-- Vamos a generar un test llamado **`ExecuteAsync_ValidDto_UpdatesTenantAndReturnsMappedResponse`**.
-  Le pasamos `tenantId = un guid` y un `UpdateTenantDto` válido; le decimos al mock
-  `GetTenantByIdAsync(tenantId) → un tenant existente`, `ExistsBySlugAsync("nuevo-slug", tenant.Id, _) → false`
-  y `UpdateTenantAsync(...) → el mismo tenant`. Procesamos `ExecuteAsync(tenantId, dto)` y esperamos
-  un `TenantResponse` mapeado con los valores nuevos, y verificamos que `UpdateTenantAsync` se
-  llamó con un tenant cuyo `Slug == "nuevo-slug"`.
-
-- Vamos a generar un test llamado **`ExecuteAsync_DuplicateSlug_ThrowsAndExcludesOwnTenant`**. Le
-  pasamos un DTO con un nombre que genera un slug usado por **otro** tenant; le decimos al mock
-  `ExistsBySlugAsync(slug, tenant.Id, _) → true`; procesamos y esperamos
-  `SlugAlreadyExistsException`. La clave: verificamos con Moq que `ExistsBySlugAsync` se llamó con
-  el `tenantId` propio como `excludeTenantId` (si excluye mal, editar un tenant sin cambiar de
-  nombre devolvería un 409 falso — es el caso TEN-21 del backlog).
-
-- Vamos a generar un test llamado **`ExecuteAsync_TenantNotFound_ThrowsKeyNotFoundException`**.
-  Le pasamos `tenantId` y le decimos al mock `GetTenantByIdAsync(...) → throw new KeyNotFoundException(...)`;
-  procesamos `ExecuteAsync(...)` y esperamos que la excepción se propague tal cual (así el
-  middleware la convierte en 404), y verificamos que `ExistsBySlugAsync` nunca se llamó.
-
-- Vamos a generar un test llamado **`ExecuteAsync_InvalidDto_ThrowsValidationException`**. Le
-  pasamos un DTO con `Name = ""`; procesamos y esperamos `ValidationException` sin tocar el
-  repositorio.
-
-**Aceptación**
-- [ ] Happy path mapeado + `Verify` de `UpdateTenantAsync`
-- [ ] El `excludeTenantId` del `ExistsBySlugAsync` está verificado (TEN-21)
-- [ ] Tenant inexistente y DTO inválido cubiertos
-
----
-
-#### TEST-11 · `ChangeStatusTenantTests`, `ChangeRecruitmentModeTenantTests`, `ChangeSubscriptionTypeTenantTests`
-
-**Archivos:** `MateHR.Application.Tests/Tenants/Commands/*.cs` (uno por cada comando)
-
-Son use cases delgados: validan el DTO y delegan en el repositorio. Para **cada uno** de los tres
-archivos vamos a escribir la misma terna de tests, cambiando solo el método del repo y el campo del
-DTO:
-
-- Vamos a generar un test llamado **`ExecuteAsync_ValidDto_UpdatesAndReturnsMappedResponse`**. Le
-  pasamos `tenantId = un guid` y el DTO correspondiente con un valor válido
-  (`ChangeTenantStatusDto { Status = Suspended }`, `ChangeRecruitmentModeDto { RecruitmentMode = External }`
-  o `ChangeSubscriptionTypeDto { SubscriptionType = Yearly }`); le decimos al mock que
-  `UpdateStatusTenantAsync` / `UpdateRecruitmentModeTenantAsync` / `UpdateSubscriptionTypeTenantAsync`
-  devuelva el tenant. Procesamos `ExecuteAsync(tenantId, dto)` y esperamos un `TenantResponse`
-  mapeado con el estado nuevo, y verificamos con `Verify` que el repo se llamó con ese `tenantId`
-  y **exactamente** el valor del DTO (no un valor default).
-
-- Vamos a generar un test llamado **`ExecuteAsync_UndefinedEnum_ThrowsValidationException`**. Le
-  pasamos el DTO con el enum fuera de rango (`(TenantStatus)999`, `(RecruitmentMode)999` o
-  `(SubscriptionType)999`); procesamos `ExecuteAsync(...)` y esperamos `ValidationException` (los
-  validators usan `.IsInEnum()`), verificando que el repo no se tocó.
-
-- Vamos a generar un test llamado **`ExecuteAsync_TenantNotFound_ThrowsKeyNotFoundException`**.
-  Le pasamos un `tenantId` y le decimos al mock que el método del repo lance
-  `KeyNotFoundException`; procesamos y esperamos que se propague (404 vía middleware).
-
-**Aceptación**
-- [ ] Los 3 archivos cubren happy path + `Verify` de argumentos
-- [ ] Enum inválido → `ValidationException` sin llegar al repo
-
----
-
-#### TEST-12 · `GetTenantsTests`
-
-**Archivo:** `MateHR.Application.Tests/Tenants/Queries/GetTenantsTests.cs`
-
-- Vamos a generar un test llamado **`ExecuteAsync_ValidRequest_ReturnsPagedResultWithMappedItems`**.
-  Le pasamos un `GetTenantsRequest { PageNumber = 1, PageSize = 20, Status = null }`; le decimos al
-  mock que `GetTenantsAsync(null, 1, 20, _)` devuelva un `PagedResult<Tenant>` con 2 tenants
-  reales; procesamos `ExecuteAsync(request)` y esperamos un `PagedResult<TenantResponse>` con los
-  ítems mapeados y el `TotalCount` conservado (acá confirmamos que el mapeo de `PagedResult<T>` de
-  TEST-08 funciona en un caso real).
-
-- Vamos a generar un test llamado **`ExecuteAsync_ForwardsStatusAndPagingToRepository`**. Le
-  pasamos `Status = TenantStatus.Active`, `PageNumber = 3`, `PageSize = 50`; procesamos
-  `ExecuteAsync(request)` y verificamos con `Verify` que el repo recibió exactamente esos tres
-  valores (`GetTenantsAsync(TenantStatus.Active, 3, 50, _)`), no una copia alterada.
-
-- Vamos a generar un test llamado **`ExecuteAsync_PageSizeAbove100_ThrowsValidationException`**.
-  Le pasamos `PageSize = 101`; procesamos y esperamos `ValidationException` (validator:
-  `InclusiveBetween(1, 100)`), y que el repo no se llamó.
-
-- Vamos a generar un test llamado **`ExecuteAsync_PageNumberZero_ThrowsValidationException`**. Le
-  pasamos `PageNumber = 0`; procesamos y esperamos `ValidationException` (`GreaterThanOrEqualTo(1)`).
-
-**Aceptación**
-- [ ] Happy path con mapper real y `Verify` de parámetros
-- [ ] Los 2 casos de request inválido cortan antes del repo
-
----
-
-#### TEST-13 · `GetTenantByIdTests` y `GetTenantBySlugTests`
-
-**Archivos:** `MateHR.Application.Tests/Tenants/Queries/GetTenantByIdTests.cs` y
-`GetTenantBySlugTests.cs`
-
-- Vamos a generar un test llamado **`ExecuteAsync_ExistingId_ReturnsMappedResponse`** en
-  `GetTenantByIdTests`. Le pasamos `tenantId = un guid` que el mock devuelve como `Tenant`
-  existente; procesamos `ExecuteAsync(tenantId)` y esperamos un `TenantResponse` con los mismos
-  campos.
-
-- Vamos a generar un test llamado **`ExecuteAsync_UnknownId_ThrowsKeyNotFoundException`**. Le
-  pasamos un `tenantId` y le decimos al mock `GetTenantByIdAsync(...) → throw new KeyNotFoundException()`;
-  procesamos y esperamos que se propague (el middleware la mapea a 404).
-
-- Vamos a generar un test llamado **`ExecuteAsync_UncleanSlug_NormalizesSlugBeforeQuery`** en
-  `GetTenantBySlugTests`. Le pasamos `slug = "Mi Empresa"` (con mayúscula y espacio); procesamos
-  `ExecuteAsync("Mi Empresa")` y verificamos que el repo fue llamado con
-  `GetTenantBySlugAsync("mi-empresa", _)` — es la normalización de `SlugGenerator` antes de buscar.
-
-- Vamos a generar un test llamado **`ExecuteAsync_UnknownSlug_ThrowsKeyNotFoundException`**. Le
-  pasamos `slug = "no-existe"` y le decimos al mock que lance `KeyNotFoundException`;
-  procesamos y esperamos que se propague.
-
-**Aceptación**
-- [ ] Ambos queries: happy path mapeado y `KeyNotFoundException` propagada
-- [ ] El slug se normaliza antes de pegarle al repo
-
----
-
-#### TEST-14 · Validators (por fuera, opcional pero muy barato)
-
-**Archivos:** `MateHR.Application.Tests/Tenants/Validators/CreateTenantDtoValidatorTests.cs` y
-`GetTenantsRequestValidatorTests.cs`
-
-Si queremos validar las reglas sueltas sin pasar por el use case, instanciamos el validator real y
-probamos `Validate(dto)`:
-
-- Vamos a generar un test llamado **`Validate_EmptyName_IsInvalid`**. Le pasamos un
-  `CreateTenantDto` con `Name = ""`; procesamos `validator.Validate(dto)` y esperamos
-  `IsValid == false` y un error con `PropertyName == "Name"`.
-
-- Vamos a generar un test llamado **`Validate_NameExceedsMaxLength_IsInvalid`**. Le pasamos
-  `Name = new string('a', 201)`; procesamos y esperamos `IsValid == false`.
-
-- Vamos a generar un test llamado **`Validate_CuitWithLetters_IsInvalid`**. Le pasamos
-  `CUIT = "20A30405061"`; procesamos y esperamos `IsValid == false` (falla el `Matches`).
-
-- Vamos a generar un test llamado **`Validate_CuitWrongLength_IsInvalid`**. Le pasamos
-  `CUIT = "123"`; procesamos y esperamos `IsValid == false` (falla el `Length(11)`).
-
-- Vamos a generar un test llamado **`Validate_InvalidOwnerEmail_IsInvalid`**. Le pasamos
-  `OwnerEmail = "no-es-un-mail"`; procesamos y esperamos `IsValid == false` (`EmailAddress()`).
-
-- Vamos a generar un test llamado **`Validate_NullIndustry_IsInvalid`**. Le pasamos
-  `Industry = null`; procesamos y esperamos `IsValid == false`.
-
-- Vamos a generar un test llamado **`Validate_ValidDto_IsValid`**. Le pasamos un DTO completo y
-  válido; procesamos y esperamos `IsValid == true` y `Errors` vacío.
-
-- Vamos a generar un test llamado **`Validate_PageSizeZero_IsInvalid`** en
-  `GetTenantsRequestValidatorTests`. Le pasamos `PageSize = 0`; procesamos y esperamos
-  `IsValid == false`. Repetimos la historia con **`Validate_PageSizeAbove100_IsInvalid`**
-  (`PageSize = 101`) y **`Validate_PageNumberZero_IsInvalid`** (`PageNumber = 0`).
-
-- Vamos a generar un test llamado **`Validate_DefaultRequest_IsValid`**. Le pasamos un
-  `GetTenantsRequest` recién creado (los defaults: `PageNumber = 1`, `PageSize = 20`); procesamos y
-  esperamos `IsValid == true`.
-
-**Aceptación**
-- [ ] Todas las reglas de `CreateTenantDtoValidator` cubiertas, más el happy path
-- [ ] Paging inválido y request por defecto de `GetTenantsRequest`
-
----
-
-#### TEST-15 · `LoginUserTests` — el más importante de auth
-
-**Archivo:** `MateHR.Application.Tests/Users/Commands/LoginUserTests.cs`
-
-`LoginUser` tiene muchos colaboradores, así que el mock se arma así:
-
-```csharp
-var userRepository = new Mock<IUserRepository>();
-var refreshTokenRepository = new Mock<IRefreshTokenRepository>();
-var passwordHasher = new Mock<IPasswordHasher>();
-var refreshTokenService = new Mock<IRefreshTokenService>();
-var jwtService = new Mock<IJwtService>();
-// mapper real + new LoginRequestValidator()
-```
-
-- Vamos a generar un test llamado **`ExecuteAsync_ValidCredentials_ReturnsTokensAndMappedUser`**.
-  Le pasamos `LoginRequest { Email = "ana@acme.com", Password = "secreta123" }`; le decimos a los
-  mocks: `GetByEmailAsync("ana@acme.com") → user activo con PasswordHash = "hash"`,
-  `passwordHasher.Verify("secreta123", "hash") → true`,
-  `jwtService.GenerateAccessToken(...) → new IssuedToken("access-token", ...)`,
-  `refreshTokenService.Generate() → new IssuedToken("refresh-token", ...)`,
-  `refreshTokenService.ComputeHash("refresh-token") → "hash-del-refresh"`,
-  `refreshTokenRepository.CreateRefreshTokenAsync(...) → el entity`. Procesamos
-  `ExecuteAsync(request)` y esperamos una `LoginResponse` con `AccessToken == "access-token"`,
-  `RefreshToken == "refresh-token"` y el `User` mapeado; además verificamos que se llamaron
-  `InvalidateExpiredUserRefreshTokensAsync(user.Id, ...)`, `CreateRefreshTokenAsync(...)` con un
-  token cuyo `TokenHash == "hash-del-refresh"` y `UserId == user.Id`, y `UpdateUserAsync(user)`.
-
-- Vamos a generar un test llamado **`ExecuteAsync_UnknownEmail_ThrowsInvalidCredentialsException`**.
-  Le pasamos un email que no existe; le decimos al mock `GetByEmailAsync(...) → null`; procesamos
-  `ExecuteAsync(request)` y esperamos `InvalidCredentialsException` con el mensaje por defecto
-  `"Las credenciales son invalidas."`, y que ni `GenerateAccessToken` ni `CreateRefreshTokenAsync`
-  se hayan llamado.
-
-- Vamos a generar un test llamado **`ExecuteAsync_WrongPassword_ThrowsSameInvalidCredentialsException`**.
-  Le pasamos un email válido y `Password = "otra-clave"`; le decimos al mock que el user existe pero
-  `passwordHasher.Verify(...) → false`; procesamos y esperamos `InvalidCredentialsException`. La
-  historia clave: **el mensaje tiene que ser idéntico al del test anterior** (no diferencia usuario
-  inexistente de contraseña mala — es a propósito, evita la enumeración de usuarios).
-
-- Vamos a generar un test llamado **`ExecuteAsync_InactiveUser_ThrowsInvalidCredentialsExceptionWithInactiveMessage`**.
-  Le pasamos un user con `IsActive = false` y contraseña correcta; procesamos y esperamos
-  `InvalidCredentialsException` con mensaje `"El usuario esta inactivo."`, y que
-  `RevokeAllUserRefreshTokensAsync`/`CreateRefreshTokenAsync` no se llamen.
-
-- Vamos a generar un test llamado **`ExecuteAsync_ShortPassword_ThrowsValidationException`**. Le
-  pasamos `Password = "123"`; procesamos y esperamos `ValidationException` (validator:
-  `MinimumLength(8)`), sin tocar el repo.
-
-- Vamos a generar un test llamado **`ExecuteAsync_MixedCaseEmail_NormalizesBeforeQuery`**. Le
-  pasamos `Email = "  ANA@ACME.COM  "`; procesamos `ExecuteAsync(request)` y verificamos con Moq
-  que `GetByEmailAsync` fue llamado con `"ana@acme.com"` (`Trim().ToLowerInvariant()`).
-
-**Aceptación**
-- [ ] Happy path con todas las verificaciones de interacción (`Verify`)
-- [ ] Usuario inexistente y contraseña mala → misma excepción con el mismo mensaje
-- [ ] Usuario inactivo, request inválido y normalización del email cubiertos
-
----
-
-#### TEST-16 · `RefreshAccessTokenTests` — el de seguridad más delicado
-
-**Archivo:** `MateHR.Application.Tests/Users/Commands/RefreshAccessTokenTests.cs`
-
-Es el corazón de la rotación de tokens y la detección de reuso. Si llega un token ya usado o
-revocado, se revocan **todos** los refresh del usuario (`HandleReuseAsync`).
-
-- Vamos a generar un test llamado **`ExecuteAsync_NullToken_ThrowsInvalidCredentialsException`**.
-  Le pasamos `refreshToken = null`; procesamos `ExecuteAsync(null)` y esperamos
-  `InvalidCredentialsException` con mensaje `"El refresh token no es valido."`, sin tocar ningún
-  mock. Repetimos la historia con **`ExecuteAsync_WhitespaceToken_...`** (le pasamos `"   "`).
-
-- Vamos a generar un test llamado **`ExecuteAsync_UnknownToken_ThrowsAndHashesBeforeLookup`**. Le
-  pasamos `refreshToken = "token-inexistente"`; le decimos a los mocks
-  `refreshTokenService.ComputeHash("token-inexistente") → "sha-del-token"` y
-  `GetByTokenHashAsync("sha-del-token") → null`. Procesamos y esperamos
-  `InvalidCredentialsException`; verificamos que el hash se calculó **antes** de buscar en el repo
-  (`Verify` de `ComputeHash` y de `GetByTokenHashAsync("sha-del-token")`).
-
-- Vamos a generar un test llamado **`ExecuteAsync_ActiveToken_RotatesTokenAndInvalidatesStamp`** —
-  el happy path. Le pasamos un token cuyo hash da un `storedToken` con `RevokedAt = null` y
-  `ExpiresAt > now`, y un user `IsActive = true`; los mocks devuelven el access token y el refresh
-  nuevo. Procesamos y esperamos una `LoginResponse` con los dos tokens nuevos y el `User` mapeado;
-  verificamos que `UpdateRefreshTokenAsync(storedToken)` se llamó **después** de que el token viejo
-  tenga `RevokedAt` seteado (usá `It.Is<RefreshToken>(t => t.RevokedAt != null)`), que
-  `CreateRefreshTokenAsync(...)` recibió un entity con `UserId == user.Id` y el hash del refresh
-  nuevo, y que `stampValidator.Invalidate(user.Id)` se llamó.
-
-- Vamos a generar un test llamado **`ExecuteAsync_ReusedToken_RevokesAllUserTokensAndThrows`** —
-  *el caso que previene el robo de sesión*. Le pasamos un token que la base devuelve con
-  `RevokedAt` ya seteado (alguien lo reusó); procesamos `ExecuteAsync(token)` y esperamos
-  `InvalidCredentialsException`, y sobre todo verificamos que se llamó
-  `RevokeAllUserRefreshTokensAsync(storedToken.UserId, ...)`: si este `Verify` no se cumple, el
-  test no está probando nada. No lo pases por alto.
-
-- Vamos a generar un test llamado **`ExecuteAsync_ExpiredToken_RevokesAllUserTokensAndThrows`**.
-  Le pasamos un token con `ExpiresAt < now` y `RevokedAt = null`; procesamos y esperamos
-  `InvalidCredentialsException` + `RevokeAllUserRefreshTokensAsync` (un token expirado también
-  dispara el protocolo de reuso).
-
-- Vamos a generar un test llamado **`ExecuteAsync_InactiveUser_RevokesAllTokensAndThrows`**. Le
-  pasamos un token vigente pero con `user.CanAuthenticate() == false`; procesamos y esperamos
-  `InvalidCredentialsException` con mensaje `"El usuario esta inactivo."` y verificamos
-  `RevokeAllUserRefreshTokensAsync(user.Id, ...)`.
-
-**Aceptación**
-- [ ] Rotación feliz: token viejo revocado, token nuevo creado, stamp invalidado
-- [ ] Reuso (revocado y expirado) → revoca todos los tokens del usuario y falla
-- [ ] Token huérfano/nulo e usuario inactivo cubiertos, con el hash calculado antes de buscar
-
----
-
-#### TEST-17 · `CreateUserTests`
-
-**Archivo:** `MateHR.Application.Tests/Users/Commands/CreateUserTests.cs`
-
-`CreateUser.ExecuteAsync`: valida DTO → chequea email duplicado → valida que el tenant exista (si
-viene `TenantId`) → construye el `User` con el password hasheado → persiste → invalida la stamp.
-
-- Vamos a generar un test llamado **`ExecuteAsync_ValidRequest_CreatesUserWithHashedPassword`**.
-  Le pasamos un `CreateUserRequest` con rol `Recruiter`, `TenantId = Guid.NewGuid()`,
-  `Email = "  NUEVA@ACME.COM  "` y `Password = "secreta123"`; le decimos a los mocks:
-  `ExistsByEmailAsync("nueva@acme.com") → false`, `GetTenantByIdAsync(tenantId) → un tenant`,
-  `passwordHasher.Hash("secreta123") → "hash-abc"`,
-  `CreateUserAsync(...) → el mismo user`. Procesamos `ExecuteAsync(request)` y esperamos un
-  `UserResponse` mapeado; verificamos que el `User` que llegó a `CreateUserAsync` tiene
-  `Email == "nueva@acme.com"` (normalizado), `PasswordHash == "hash-abc"` (el hash del hasher, no
-  la password en claro) y `TenantId` seteado.
-
-- Vamos a generar un test llamado **`ExecuteAsync_DuplicateEmail_ThrowsEmailAlreadyExistsException`**.
-  Le pasamos un email que ya existe (`ExistsByEmailAsync(...) → true`); procesamos y esperamos
-  `EmailAlreadyExistsException` con `.Email == "nueva@acme.com"` y que `CreateUserAsync` no se
-  llamó.
-
-- Vamos a generar un test llamado **`ExecuteAsync_UnknownTenant_ThrowsKeyNotFoundException`**. Le
-  pasamos un `TenantId` y le decimos al mock `GetTenantByIdAsync(...) → throw new KeyNotFoundException()`;
-  procesamos y esperamos que se propague (404 vía middleware) y que no se cree el user.
-
-- Vamos a generar un test llamado **`ExecuteAsync_SuperAdminWithTenant_ThrowsValidationException`**.
-  Le pasamos `Role = SuperAdmin` y `TenantId = Guid.NewGuid()`; procesamos y esperamos
-  `ValidationException` (lo valida `CreateUserRequestValidator` con un mensaje útil de API, no la
-  excepción de dominio).
-
-- Vamos a generar un test llamado **`ExecuteAsync_ShortPassword_ThrowsValidationException`**. Le
-  pasamos `Password = "123"`; procesamos y esperamos `ValidationException` (`MinimumLength(8)`).
-
-- Vamos a generar un test llamado **`ExecuteAsync_UserCreated_InvalidatesSecurityStamp`**. Usando
-  el mismo setup del happy path, procesamos `ExecuteAsync(request)` y verificamos con Moq que
-  `stampValidator.Invalidate(created.Id)` se llamó con el id del user recién creado (importa para
-  que una stamp cacheada vieja no dé acceso).
-
-**Aceptación**
-- [ ] Happy path con email normalizado y hash del hasher
-- [ ] Email duplicado, tenant inexistente y reglas SuperAdmin/tenant
-- [ ] `Invalidate` de la stamp verificado
-
----
-
-#### TEST-18 · `LogoutUserTests`
-
-**Archivo:** `MateHR.Application.Tests/Users/Commands/LogoutUserTests.cs`
-
-`LogoutUser` es tolerante a fallos: si el token es vacío o no existe, no hace nada y no lanza.
-
-- Vamos a generar un test llamado **`ExecuteAsync_NullToken_DoesNotTouchRepository`**. Le pasamos
-  `refreshToken = null`; procesamos `ExecuteAsync(null)` y esperamos que la tarea complete sin
-  excepción, y verificamos con `Verify(..., Times.Never)` que `GetByTokenHashAsync` y
-  `UpdateRefreshTokenAsync` nunca se llamaron. Repetimos la historia con
-  **`ExecuteAsync_WhitespaceToken_...`** (le pasamos `"   "`).
-
-- Vamos a generar un test llamado **`ExecuteAsync_UnknownToken_ReturnsWithoutPersisting`**. Le
-  pasamos un token cualquiera; le decimos a los mocks `ComputeHash(token) → "sha"` y
-  `GetByTokenHashAsync("sha") → null`; procesamos y esperamos que no lance nada, y verificamos
-  `UpdateRefreshTokenAsync(..., Times.Never)`.
-
-- Vamos a generar un test llamado **`ExecuteAsync_ExistingToken_RevokesAndPersists`**. Le pasamos
-  un token; le decimos a los mocks `ComputeHash(token) → "sha"` y
-  `GetByTokenHashAsync("sha") → un token vivo`; procesamos y esperamos que `storedToken.RevokedAt`
-  quede seteado, y verificamos que `UpdateRefreshTokenAsync(token, ...)` se llamó una vez.
-
-**Aceptación**
-- [ ] Tolerancia a token nulo/vacío/desconocido (`Times.Never`)
-- [ ] Token encontrado → revocado y persistido
-
----
-
-#### TEST-19 · `GetCurrentUserTests` y `UserProvisioningServiceTests`
-
-**Archivos:** `MateHR.Application.Tests/Users/Queries/GetCurrentUserTests.cs` y
-`MateHR.Application.Tests/Users/Services/UserProvisioningServiceTests.cs`
-
-- Vamos a generar un test llamado **`ExecuteAsync_ExistingUser_ReturnsMappedResponse`** en
-  `GetCurrentUserTests`. Le pasamos `userId = un guid` que el mock devuelve como `User` existente;
-  procesamos `ExecuteAsync(userId)` y esperamos un `UserResponse` con `Id`, `Email`, `Role` y
-  `TenantId` iguales a los del user.
-
-- Vamos a generar un test llamado **`ExecuteAsync_UnknownUser_ThrowsKeyNotFoundException`**. Le
-  pasamos un `userId` y le decimos al mock que lance `KeyNotFoundException`; procesamos y esperamos
-  que se propague (404 vía middleware).
-
-- Vamos a generar un test llamado **`CreateAsync_ShortPassword_ThrowsArgumentException`** en
-  `UserProvisioningServiceTests`. Le pasamos `plainTextPassword = "1234567"`; procesamos
-  `CreateAsync(...)` y esperamos `ArgumentException` con `ParamName == "plainTextPassword"`,
-  sin tocar el repo.
-
-- Vamos a generar un test llamado **`CreateAsync_DuplicateEmail_ThrowsEmailAlreadyExistsException`**.
-  Le pasamos `email = "  ANA@ACME.COM  "` y le decimos al mock `ExistsByEmailAsync("ana@acme.com") → true`;
-  procesamos y esperamos `EmailAlreadyExistsException` con `.Email == "ana@acme.com"` (email ya
-  normalizado).
-
-- Vamos a generar un test llamado **`CreateAsync_ValidData_CreatesAndPersistsUser`**. Le pasamos
-  `firstName = "Ana"`, `lastName = "Pérez"`, `email = "ANA@ACME.com"`, `plainTextPassword = "secreta123"`,
-  `role = Recruiter`, `tenantId = Guid.NewGuid()`; le decimos a los mocks
-  `ExistsByEmailAsync(...) → false`, `passwordHasher.Hash(...) → "hash-1"`,
-  `CreateUserAsync(...) → el user`. Procesamos y esperamos que devuelva el `User` persistido con
-  `Email == "ana@acme.com"` y `PasswordHash == "hash-1"`.
-
-**Aceptación**
-- [ ] `GetCurrentUser`: happy path y `KeyNotFoundException`
-- [ ] `UserProvisioningService`: password corta, email duplicado y creación feliz
-
----
-
-#### TEST-20 · Validators de Users
-
-**Archivos:** `MateHR.Application.Tests/Users/Validators/CreateUserRequestValidatorTests.cs` y
-`LoginRequestValidatorTests.cs`
-
-- Vamos a generar un test llamado **`Validate_SuperAdminWithTenant_IsInvalid`**. Le pasamos un
-  `CreateUserRequest` con `Role = SuperAdmin` y `TenantId = Guid.NewGuid()`; procesamos
-  `validator.Validate(request)` y esperamos `IsValid == false` con un error cuyo mensaje diga que
-  un SuperAdmin no pertenece a un tenant.
-
-- Vamos a generar un test llamado **`Validate_RoleWithoutTenant_IsInvalid`**. Le pasamos
-  `Role = Recruiter` y `TenantId = null`; procesamos y esperamos `IsValid == false`.
-
-- Vamos a generar un test llamado **`Validate_TenantIdEmpty_IsInvalid`**. Le pasamos
-  `Role = Employee` y `TenantId = Guid.Empty`; procesamos y esperamos `IsValid == false` con el
-  mensaje "El tenant no puede ser un Guid vacio."
-
-- Vamos a generar un test llamado **`Validate_ShortPassword_IsInvalid`**. Le pasamos
-  `Password = "123"`; procesamos y esperamos `IsValid == false`. Repetimos con
-  **`Validate_InvalidEmail_IsInvalid`** (`Email = "no-es-un-mail"`).
-
-- Vamos a generar un test llamado **`Validate_ValidRequest_IsValid`**. Le pasamos un request completo
-  y válido (rol común con `TenantId` válido); procesamos y esperamos `IsValid == true`.
-
-- Vamos a generar un test llamado **`Validate_InvalidEmail_IsInvalid`** en
-  `LoginRequestValidatorTests`. Le pasamos `Email = "no-es-un-mail"`; procesamos y esperamos
-  `IsValid == false`.
-
-- Vamos a generar un test llamado **`Validate_ShortPassword_IsInvalid`** en
-  `LoginRequestValidatorTests`. Le pasamos `Password = "1234567"`; procesamos y esperamos
-  `IsValid == false`.
-
-- Vamos a generar un test llamado **`Validate_ValidRequest_IsValid`** en
-  `LoginRequestValidatorTests`. Le pasamos `Email = "ana@acme.com"` y `Password = "secreta123"`;
-  procesamos y esperamos `IsValid == true`.
-
-**Aceptación**
-- [ ] Invariantes SuperAdmin/tenant y password/email de `CreateUserRequestValidator`
-- [ ] Reglas de `LoginRequestValidator` con su happy path
-
----
-
-## Bloque 5c — Infrastructure (repos con EF InMemory, servicios con contexto real)
-
-Para los repositorios necesitás un `ApplicationDbContext` en memoria. Helpers típicos en cada
-archivo de test (o una clase `InMemoryDbContextFactory` compartida):
-
-```csharp
-var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-    .UseInMemoryDatabase($"test-db-{Guid.NewGuid()}")   // nombre único por test, evita contaminar
-    .Options;
-var context = new ApplicationDbContext(options);
-var repository = new TenantRepository(context);
-```
-
-**Trampas IMPORTANTES de EF InMemory (léelas antes de escribir):**
-1. **No aplica índices únicos.** `TenantConfiguration` define el índice único sobre `Slug`, pero
-   InMemory lo ignora: dos tenants con el mismo slug se pueden insertar sin error. No escribas un
-   test que espere que la base rechace duplicados (el chequeo de duplicados lo hace el use case,
-   ya testearlo en Application).
-2. El override de `SaveChangesAsync` de `ApplicationDbContext` que estampa `UpdatedAt` **sí
-   funciona** en InMemory: aprovechalo para testear que al modificar un tenant/user se setea
-   `UpdatedAt`.
-3. `Address` es owned type (con `OwnsOne`): al reasignar, cambiá la instancia completa o usá el
-   change tracker sin romper el estado.
-
-#### TEST-21 · `TenantRepositoryTests`
-
-**Archivo:** `MateHR.Infrastructure.Tests/Persistance/Repositories/TenantRepositoryTests.cs`
-
-Setup de cada test: context InMemory con nombre único + `new TenantRepository(context)`, y seed de
-tenants con `context.Tenants.Add(...)` + `SaveChanges()`.
-
-- Vamos a generar un test llamado **`GetTenantByIdAsync_ExistingTenant_ReturnsTenant`**. Le
-  insertamos un tenant en la base y le pasamos su `Id`; procesamos `GetTenantByIdAsync(id)` y
-  esperamos el mismo tenant con todos sus campos.
-
-- Vamos a generar un test llamado **`GetTenantByIdAsync_UnknownId_ThrowsKeyNotFoundException`**.
-  Le pasamos un `Guid.NewGuid()` que no existe; procesamos y esperamos `KeyNotFoundException` con
-  un mensaje que incluya el id.
-
-- Vamos a generar un test llamado **`GetTenantBySlugAsync_ExistingSlug_ReturnsTenant`**. Le
-  insertamos un tenant con `Slug = "acme"` y le pasamos `"acme"`; procesamos y esperamos el tenant.
-
-- Vamos a generar un test llamado **`GetTenantBySlugAsync_UnknownSlug_ThrowsKeyNotFoundException`**.
-  Le pasamos `"no-existe"`; procesamos y esperamos `KeyNotFoundException`.
-
-- Vamos a generar un test llamado **`GetTenantsAsync_Page2Size2_ReturnsPageAndTotalCount`**. Le
-  insertamos 5 tenants y le pasamos `status = null, pageNumber = 2, pageSize = 2`; procesamos
-  `GetTenantsAsync(...)` y esperamos que `Items` tenga 2 ítems (los 3ros por orden de nombre),
-  `TotalCount == 5`, `PageNumber == 2` y `TotalPages == 3`.
-
-- Vamos a generar un test llamado **`GetTenantsAsync_WithStatusFilter_ReturnsOnlyMatching`**. Le
-  insertamos 3 tenants `Active` y 2 `Suspended`, y le pasamos `status = TenantStatus.Active`;
-  procesamos y esperamos que `Items` tenga solo los 3 `Active` y que `TotalCount == 3`.
-
-- Vamos a generar un test llamado **`GetTenantsAsync_ReturnsOrderedByName`**. Le insertamos tenants
-  con nombres desordenados (`"Zeta"`, `"Alpha"`, `"Mid"`); procesamos sin filtro y esperamos que
-  `Items` venga ordenado `Alpha, Mid, Zeta` (`OrderBy(t => t.Name)`).
-
-- Vamos a generar un test llamado **`ExistsBySlugAsync_ExistingSlug_ReturnsTrue`**. Le insertamos un
-  tenant con `Slug = "acme"` y le pasamos `("acme", null)`; procesamos y esperamos `true`.
-
-- Vamos a generar un test llamado **`ExistsBySlugAsync_UnknownSlug_ReturnsFalse`**. Le pasamos
-  `("no-existe", null)`; procesamos y esperamos `false`.
-
-- Vamos a generar un test llamado **`ExistsBySlugAsync_ExcludingOwnTenant_ReturnsFalse`**. Le
-  insertamos un tenant con `Slug = "acme"` y le pasamos `("acme", tenant.Id)`; procesamos y
-  esperamos `false` — con el mismo slug pero excluyendo al propio tenant no hay conflicto (es la
-  lógica del TEN-21).
-
-- Vamos a generar un test llamado **`CreateTenantAsync_PersistsTenant`**. Le construimos un tenant
-  válido; procesamos `CreateTenantAsync(tenant)` y esperamos que devuelva el tenant, y además
-  re-consultamos por `GetTenantByIdAsync(tenant.Id)` y esperamos que traiga los mismos
-  `Name`/`Slug`/`CUIT`/`OwnerEmail`.
-
-- Vamos a generar un test llamado **`UpdateStatusTenantAsync_ChangesStatusAndSetsUpdatedAt`**. Le
-  insertamos un tenant, **lo traemos primero con `GetTenantByIdAsync`** (para que el change tracker
-  lo trackee — si lo construís a mano, queda `Unchanged` y no se persiste el cambio), y le pasamos
-  `TenantStatus.Suspended`; procesamos `UpdateStatusTenantAsync(id, Suspended)` y esperamos que el
-  tenant devuelto tenga `Status == Suspended` y que `UpdatedAt` esté seteado (el override de
-  `SaveChangesAsync` funciona en InMemory).
-
-- Vamos a generar un test llamado **`UpdateRecruitmentModeTenantAsync_ChangesMode`**. Mismo setup;
-  le pasamos `RecruitmentMode.External` y esperamos `RecruitmentMode == External` al re-consultar.
-
-- Vamos a generar un test llamado **`UpdateSubscriptionTypeTenantAsync_ChangesType`**. Mismo setup;
-  le pasamos `SubscriptionType.Yearly` y esperamos `SubscriptionType == Yearly` (y
-  `SubscriptionStatus == None`) al re-consultar.
-
-**Aceptación**
-- [ ] Búsquedas por id/slug con éxito y con `KeyNotFoundException`
-- [ ] Paginación, filtro por status y orden por nombre
-- [ ] `ExistsBySlugAsync` con y sin `excludeTenantId`
-- [ ] Los 3 `Update*` persisten el cambio y estampan `UpdatedAt`
-
----
-
-#### TEST-22 · `UserRepositoryTests`
-
-**Archivo:** `MateHR.Infrastructure.Tests/Persistance/Repositories/UserRepositoryTests.cs`
-
-- Vamos a generar un test llamado **`GetByIdAsync_ExistingUser_ReturnsUser`**. Le insertamos un user
-  y le pasamos su `Id`; procesamos y esperamos el mismo user.
-
-- Vamos a generar un test llamado **`GetByIdAsync_UnknownId_ThrowsKeyNotFoundException`**. Le
-  pasamos un `Guid.NewGuid()`; procesamos y esperamos `KeyNotFoundException`.
-
-- Vamos a generar un test llamado **`GetByEmailAsync_ExistingEmail_ReturnsUser`**. Le insertamos un
-  user con `Email = "ana@acme.com"` y le pasamos `"ana@acme.com"`; procesamos y esperamos el user.
-
-- Vamos a generar un test llamado **`GetByEmailAsync_UnknownEmail_ReturnsNull`**. Le pasamos
-  `"no@existe.com"`; procesamos y esperamos `null`.
-
-- Vamos a generar un test llamado **`GetByEmailAsync_MixedCaseEmail_FindsUser`**. Le insertamos el
-  user con email ya normalizado y le pasamos `"ANA@ACME.COM "` (mayúsculas y espacio); procesamos y
-  esperamos el user — el repo aplica `email.Trim().ToLowerInvariant()` antes de comparar.
-
-- Vamos a generar un test llamado **`ExistsByEmailAsync_ExistingEmail_ReturnsTrue`** y su hermano
-  **`ExistsByEmailAsync_UnknownEmail_ReturnsFalse`**. Le pasamos el email (con mayúsculas en el caso
-  `true`); procesamos y esperamos `true`/`false`.
-
-- Vamos a generar un test llamado **`CreateUserAsync_PersistsUser`**. Le construimos un user válido;
-  procesamos `CreateUserAsync(user)` y esperamos que lo devuelva, y re-consultamos por id para
-  comparar `Email`, `Role` y `TenantId`.
-
-- Vamos a generar un test llamado **`UpdateUserAsync_SetsUpdatedAt`**. Le traemos un user con
-  `GetByIdAsync`, le cambiamos algo (por ejemplo `RecordLogin(now)`); procesamos
-  `UpdateUserAsync(user)` y esperamos que al re-consultar `UpdatedAt` venga con el nuevo valor (el
-  override de `SaveChangesAsync`).
-
-**Aceptación**
-- [ ] Búsquedas por id/email con éxito, `null` y `KeyNotFoundException`
-- [ ] Normalización del email en la búsqueda
-- [ ] `Create` persiste y `Update` estampa `UpdatedAt`
-
----
-
-#### TEST-23 · `RefreshTokenRepositoryTests`
-
-**Archivo:** `MateHR.Infrastructure.Tests/Persistance/Repositories/RefreshTokenRepositoryTests.cs`
-
-- Vamos a generar un test llamado **`GetByTokenHashAsync_ExistingHash_ReturnsToken`**. Le
-  insertamos un token con `TokenHash = "sha-1"` y le pasamos `"sha-1"`; procesamos y esperamos el
-  token.
-
-- Vamos a generar un test llamado **`GetByTokenHashAsync_UnknownHash_ReturnsNull`**. Le pasamos
-  `"sha-inexistente"`; procesamos y esperamos `null`.
-
-- Vamos a generar un test llamado **`CreateRefreshTokenAsync_PersistsToken`**. Le construimos un
-  token válido; procesamos y esperamos que lo devuelva, y re-consultamos por hash para comparar
-  `UserId` y `ExpiresAt`.
-
-- Vamos a generar un test llamado **`UpdateRefreshTokenAsync_PersistsRevocation`**. Le traemos un
-  token insertado, lo revocamos con `Revoke(now)`; procesamos `UpdateRefreshTokenAsync(token)` y
-  esperamos que al re-consultar `RevokedAt` esté seteado.
-
-- Vamos a generar un test llamado **`InvalidateExpiredUserRefreshTokensAsync_RevokesOnlyExpiredAndReturnsCount`**.
-  Le insertamos 3 tokens del mismo user: uno expirado (`ExpiresAt <= now`, sin revocar), uno vigente
-  y uno ya revocado/expirado; le pasamos `(userId, now)`. Procesamos y esperamos que devuelva `1`,
-  que el expirado tenga `RevokedAt` seteado, que el vigente siga `RevokedAt == null` y que el ya
-  revocado conserve su fecha original. **Trampa:** la condición es `ExpiresAt <= moment` (el igual
-  cuenta como expirado).
-
-- Vamos a generar un test llamado **`RevokeAllUserRefreshTokensAsync_RevokesOnlyUsersActiveTokens`**.
-  Le insertamos 2 tokens activos del user A y 1 token activo del user B; le pasamos
-  `(userA.Id, now)`. Procesamos y esperamos que devuelva `2`, que
-  los dos tokens de A tengan `RevokedAt` y que el de B siga sin revocar.
-
-**Aceptación**
-- [ ] Búsqueda por hash, alta y persistencia de la revocación
-- [ ] `InvalidateExpired*` revoca solo los expirados (`<=`) y cuenta bien
-- [ ] `RevokeAll*` no toca los tokens de otros usuarios
-
----
-
-#### TEST-24 · `PasswordHasherTests`
-
-**Archivo:** `MateHR.Infrastructure.Tests/Authentication/PasswordHasherTests.cs`
-
-**Nota:** los hashes con 210.000 iteraciones son lentos (~100ms cada uno). No crees decenas de
-usuarios; 4 o 5 casos alcanzan.
-
-- Vamos a generar un test llamado **`Hash_ValidPassword_ReturnsFourPartPbkdf2Format`**. Le pasamos
-  `password = "secreta123"`; procesamos `Hash("secreta123")` y esperamos un string que se parta en
-  `$` en 4 partes, donde la primera es `"pbkdf2-sha256"`, la segunda parsea como `int` de
-  iteraciones y las dos últimas son Base64 válido.
-
-- Vamos a generar un test llamado **`Hash_SamePasswordTwice_ReturnsDifferentHashes`**. Le pasamos la
-  misma password dos veces; procesamos `Hash(...)` en ambas y esperamos strings distintos (salt
-  aleatorio: dos hashes iguales sería un fallo de seguridad).
-
-- Vamos a generar un test llamado **`Verify_CorrectPassword_ReturnsTrue`**. Le generamos un hash con
-  `Hash("secreta123")` y le pasamos `("secreta123", hash)`; procesamos `Verify(...)` y esperamos
-  `true`.
-
-- Vamos a generar un test llamado **`Verify_WrongPassword_ReturnsFalse`**. Le generamos el hash de
-  `"secreta123"` y le pasamos `("otra-clave", hash)`; procesamos y esperamos `false`.
-
-- Vamos a generar un test llamado **`Verify_MalformedHash_ReturnsFalse`**. Le pasamos
-  `("secreta123", "basura")`; procesamos y esperamos `false`, **sin que lance** (el split de 4
-  partes falla y devuelve false).
-
-- Vamos a generar un test llamado **`Verify_NullOrEmptyPassword_ReturnsFalse`**. Le pasamos
-  `(null, hash)` y `("", hash)`; procesamos y esperamos `false` en ambos (el `IsNullOrEmpty` corta
-  antes de hashear). Podemos escribirlo como `[Theory]` con `[InlineData]`.
-
-- Vamos a generar un test llamado **`Hash_NullPassword_ThrowsArgumentException`**. Le pasamos
-  `null`; procesamos `Hash(null)` y esperamos `ArgumentException`
-  (`ArgumentException.ThrowIfNullOrWhiteSpace`).
-
-**Aceptación**
-- [ ] Formato del hash, salt aleatorio y `Verify` con password correcta/incorrecta
-- [ ] Hash malformado y entradas null devuelven `false`, no lanzan
-
----
-
-#### TEST-25 · `JwtServiceTests`
-
-**Archivo:** `MateHR.Infrastructure.Tests/Authentication/JwtServiceTests.cs`
-
-Necesitamos `IOptions<JwtSettings>` con un `SigningKey` válido (≥ 32 caracteres):
-
-```csharp
-var settings = Options.Create(new JwtSettings
-{
-    Issuer = "test",
-    Audience = "test",
-    SigningKey = "clave-de-prueba-con-32-caracteres-minimo",
-    AccessTokenMinutes = 60,
-    RefreshTokenDays = 14
-});
-```
-
-- Vamos a generar un test llamado **`Constructor_InvalidSettings_ThrowsInvalidOperationException`**.
-  Le pasamos settings con `Issuer = ""`; procesamos `new JwtService(settings)` y esperamos
-  `InvalidOperationException`. Repetimos la historia con **`..._MissingAudience_...`**,
-  **`..._MissingSigningKey_...`**, **`..._ShortSigningKey_...`** (le pasamos una key de 10
-  caracteres), **`..._AccessTokenMinutesZero_...`** (`AccessTokenMinutes = 0`) y
-  **`..._RefreshTokenDaysZero_...`** (`RefreshTokenDays = 0`) — son las 6 ramas de
-  `ValidateSettings()`.
-
-- Vamos a generar un test llamado **`GenerateAccessToken_NullUser_ThrowsArgumentNullException`**.
-  Le pasamos `null` como `AuthenticatedUser`; procesamos `GenerateAccessToken(null)` y esperamos
-  `ArgumentNullException`.
-
-- Vamos a generar un test llamado **`GenerateAccessToken_ValidUser_ReturnsValidTokenWithClaims`**.
-  Le pasamos un `AuthenticatedUser` con `Id`, `Email = "ana@acme.com"`, `Role = SuperAdmin`,
-  `TenantId = null` y un `SecurityStamp`; procesamos `GenerateAccessToken(user)` y esperamos un
-  `IssuedToken` cuyo `Token` se pueda validar con la **misma key** (usá
-  `JwtSecurityTokenHandler.ValidateToken` + `TokenValidationParameters` como en `Program.cs`), con
-  issuer/audience correctos y con los claims `sub`(user id), `email`, `role == "SuperAdmin"` y
-  `security_stamp` coincidentes.
-
-- Vamos a generar un test llamado **`GenerateAccessToken_UserWithTenant_IncludesTenantClaim`**. Le
-  pasamos el mismo user pero con `TenantId = Guid.NewGuid()`; procesamos, validamos el token y
-  esperamos que el claim `tenant_id` esté presente con ese valor.
-
-- Vamos a generar un test llamado **`GenerateAccessToken_UserWithoutTenant_OmitsTenantClaim`**. Le
-  pasamos `TenantId = null`; procesamos, validamos y esperamos que el claim `tenant_id` **no**
-  exista en el token.
-
-- Vamos a generar un test llamado **`GenerateAccessToken_ExpiresAtMatchesConfiguredMinutes`**. Le
-  pasamos un user válido con `AccessTokenMinutes = 60`; procesamos y esperamos que
-  `token.ExpiresAt` esté entre `now + 60min - 5s` y `now + 60min + 5s` (margen de segundos para el
-  clock).
-
-**Aceptación**
-- [ ] Las 6 validaciones de `ValidateSettings()` y el `null` del user
-- [ ] Token validable con la misma key, con claims correctos y `tenant_id` condicional
-- [ ] `ExpiresAt` respeta `AccessTokenMinutes`
-
----
-
-#### TEST-26 · `RefreshTokenServiceTests`
-
-**Archivo:** `MateHR.Infrastructure.Tests/Authentication/RefreshTokenServiceTests.cs`
-
-- Vamos a generar un test llamado **`Generate_ReturnsUrlSafeTokenWithoutPadding`**. Le pasamos
-  nada (servicio con settings válidos); procesamos `Generate()` y esperamos un `Token` no vacío,
-  sin caracteres `=` (por el `TrimEnd('=')`) y compuesto solo por `A-Za-z0-9-_` (base64url); y un
-  `ExpiresAt` cercano a `now + RefreshTokenDays`.
-
-- Vamos a generar un test llamado **`Generate_Twice_ReturnsDifferentTokens`**. Le pedimos dos
-  tokens seguidos; procesamos `Generate()` dos veces y esperamos strings distintos (aleatorio).
-
-- Vamos a generar un test llamado **`Generate_ExpiresAtMatchesConfiguredDays`**. Le pasamos
-  `RefreshTokenDays = 14`; procesamos y esperamos `ExpiresAt` dentro de `now + 14 días ± 5 segundos`.
-
-- Vamos a generar un test llamado   **`ComputeHash_SameInput_ReturnsSameHash`** — la determinística.
-  Le pasamos `"token-de-prueba"` dos veces; procesamos `ComputeHash(...)` en ambas y esperamos el
-  mismo string (SHA-256 del mismo input, sin salt).
-
-- Vamos a generar un test llamado **`ComputeHash_Returns64LowercaseHexChars`**. Le pasamos
-  `"token-de-prueba"`; procesamos y esperamos un string de 64 caracteres, todos en
-  `[0-9a-f]` (formato `Convert.ToHexString(...).ToLowerInvariant()`).
-
-- Vamos a generar un test llamado **`ComputeHash_NullOrEmpty_ThrowsArgumentException`**. Le pasamos
-  `null` y `""`; procesamos y esperamos `ArgumentException` en ambos (podemos usar `[Theory]`).
-
-**Aceptación**
-- [ ] Token base64url sin padding, aleatorio y con expiración configurada
-- [ ] `ComputeHash` determinista, 64 hex minúsculas y entradas vacías lanzan
-
----
-
-#### TEST-27 · `TenantContextTests`
-
-**Archivo:** `MateHR.Infrastructure.Tests/Services/TenantContextTests.cs`
-
-Es simple y no requiere nada más que `new TenantContext()`.
-
-- Vamos a generar un test llamado **`CurrentTenantId_WhenNotSet_IsNull`**. Le creamos el contexto
-  nuevo; procesamos leer `CurrentTenantId` y esperamos `null`.
-
-- Vamos a generar un test llamado **`SetCurrentTenantId_WithGuid_SetsValue`**. Le pasamos
-  `tenantId = Guid.NewGuid()`; procesamos `SetCurrentTenantId(guid)` y esperamos que
-  `CurrentTenantId == guid`.
-
-- Vamos a generar un test llamado **`SetCurrentTenantId_WithNull_ClearsValue`**. Le seteamos primero
-  un guid y después le pasamos `null`; procesamos `SetCurrentTenantId(null)` y esperamos
-  `CurrentTenantId == null`.
-
-**Aceptación**
-- [ ] Default `null`, set y clear
-
----
-
-#### TEST-28 · `UserSecurityStampValidatorTests`
-
-**Archivo:** `MateHR.Infrastructure.Tests/Services/UserSecurityStampValidatorTests.cs`
-
-Necesita un contexto InMemory con un `User` + un `IMemoryCache` real
-(`new MemoryCache(new MemoryCacheOptions())`). Guarda en caché 30 s por userId. **Ojo:** creá la
-`MemoryCache` por test (local), no la dejes compartida entre tests.
-
-- Vamos a generar un test llamado **`IsStampCurrentAsync_EmptyUserId_ReturnsFalseWithoutQuerying`**.
-  Le pasamos `userId = Guid.Empty` y cualquier `stamp`; procesamos `IsStampCurrentAsync(...)` y
-  esperamos `false`, y verificamos que no se pegó a la base (con el contexto vacío alcanza: si
-  consulta, devolvería `null` y también `false`, así que el valor del assert es `false` igual).
-
-- Vamos a generar un test llamado **`IsStampCurrentAsync_UnknownUser_ReturnsFalse`**. Le pasamos un
-  `userId` que no existe; procesamos y esperamos `false`.
-
-- Vamos a generar un test llamado **`IsStampCurrentAsync_InactiveUser_ReturnsFalse`**. Le
-  insertamos un user con `IsActive = false` y le pasamos su `SecurityStamp` **correcto**; procesamos
-  y esperamos `false` (un usuario inactivo ni siquiera con el stamp válido pasa).
-
-- Vamos a generar un test llamado **`IsStampCurrentAsync_MatchingStamp_ReturnsTrue`**. Le
-  insertamos un user activo y le pasamos `user.SecurityStamp`; procesamos y esperamos `true`.
-
-- Vamos a generar un test llamado **`IsStampCurrentAsync_DifferentStamp_ReturnsFalse`**. Le
-  insertamos un user activo y le pasamos `Guid.NewGuid()` (un stamp distinto); procesamos y
-  esperamos `false`.
-
-- Vamos a generar un test llamado **`IsStampCurrentAsync_CacheHitsUntilInvalidate`** — el ciclo
-  caché → invalidar → base. Le insertamos un user activo; primero consultamos con el stamp correcto
-  (va a la base y cachea), después **cambiamos el `SecurityStamp` en la base directamente con el
-  context** y volvemos a consultar con el stamp viejo: esperamos `true` (sigue cacheado, sin pegar
-  a la base); recién cuando llamamos `Invalidate(user.Id)` esperamos que la siguiente consulta con
-  el stamp viejo devuelva `false` y con el nuevo devuelva `true`.
-
-**Aceptación**
-- [ ] `Guid.Empty`, usuario inexistente e inactivo → `false`
-- [ ] Stamp correcto/incorrecto → `true`/`false`
-- [ ] Ciclo de caché completo: cachea, no se entera del cambio y al `Invalidate` vuelve a la base
-
----
-
-## Bloque 5d — Api (integración con WebApplicationFactory)
-
-Para estos tests necesitás una factory que levante la API real pero con base en memoria y JWT
-configurado. Base para `CustomWebApplicationFactory`:
-
-```csharp
-public class CustomWebApplicationFactory : WebApplicationFactory<Program>
-{
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    // 24 provincias (Argentina), orden alfabético, arranca en 1.
+    public enum Province
     {
-        builder.ConfigureAppConfiguration((_, config) =>
-        {
-            config.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Jwt:Issuer"] = "test",
-                ["Jwt:Audience"] = "test",
-                ["Jwt:SigningKey"] = "clave-de-prueba-con-32-caracteres-minimo",
-                ["Jwt:AccessTokenMinutes"] = "60",
-                ["Jwt:RefreshTokenDays"] = "14"
-            });
-        });
-        builder.ConfigureServices(services =>
-        {
-            // Sacar el DbContext registrado por AddInfrastructure y usar InMemory
-            var descriptor = services.SingleOrDefault(d =>
-                d.ServiceType == typeof(DbContextOptions<ApplicationDbContext>));
-            if (descriptor is not null) services.Remove(descriptor);
-            services.AddDbContext<ApplicationDbContext>(o => o.UseInMemoryDatabase("api-tests"));
-        });
+        BuenosAires = 1, Catamarca = 2, Chaco = 3, Chubut = 4,
+        CiudadAutonomaDeBuenosAires = 5, Cordoba = 6, Corrientes = 7, EntreRios = 8,
+        Formosa = 9, Jujuy = 10, LaPampa = 11, LaRioja = 12, Mendoza = 13, Misiones = 14,
+        Neuquen = 15, RioNegro = 16, Salta = 17, SanJuan = 18, SanLuis = 19, SantaCruz = 20,
+        SantaFe = 21, SantiagoDelEstero = 22, TierraDelFuego = 23, Tucuman = 24
     }
-    public HttpClient CreateAuthenticatedClient(UserRole role, Guid? tenantId = null) { ... }
+
+    // Alcance inicial: solo Argentina. Pendiente completar la lista ISO completa en el futuro.
+    public enum Country { Argentina = 1 }
 }
 ```
 
-Y un helper para generar tokens: creá un `AuthenticatedUser` y un `JwtService` (o un
-`JwtSecurityTokenHandler` directo con la misma key de prueba) y mandá el `Authorization: Bearer
-<token>`.
-
-**A tener en cuenta:**
-- Los enums viajan como texto en el JSON (`JsonStringEnumConverter`), así que en los bodies usás
-  `"status": "Active"`, `"industry": "Technology"`, `"role": "SuperAdmin"`
-- El refresh token va en una cookie `HttpOnly` (`matehr_refresh_token`): para leerlo del response
-  usá `response.Headers.GetValues("Set-Cookie")` y después reenviá esa cookie en el request
-  (`requestHeaders.Add("Cookie", ...)`)
-- Los endpoints protegidos devuelven 401 sin token. `TenantsController` y `UsersController` exigen
-  política `RequireSuperAdmin` (403 si el rol es `Admin`); `AuthController.Me` solo exige estar
-  autenticado
-
-#### TEST-29 · `AuthControllerTests`
-
-**Archivo:** `MateHR.Api.Tests/Controllers/v1/AuthControllerTests.cs`
-
-Necesitamos un usuario en la base InMemory para los flujos de login/refresh: cargalo en el setup
-con el propio `UserProvisioningService`/`UserRepository` contra el contexto, o con una seed dentro
-de la factory.
-
-- Vamos a generar un test llamado **`Login_WithValidCredentials_Returns200WithTokensAndCookie`**.
-  Le mandamos `POST /api/v1/auth/login` con body `{"email":"ana@acme.com","password":"secreta123"}`
-  (usuario sembrado con esa password); procesamos la request y esperamos `200 OK`, un body JSON con
-  `accessToken` no vacío y el objeto `user` con `email == "ana@acme.com"`, y un header `Set-Cookie`
-  que contenga `matehr_refresh_token=`, `HttpOnly` y `Path=/api/v1/auth`.
-
-- Vamos a generar un test llamado **`Login_WithInvalidCredentials_Returns401`**. Le mandamos el
-  mismo body con `password = "clave-mala"`; procesamos y esperamos `401 Unauthorized` con un body
-  `message` (y sin cookie de refresh).
-
-- Vamos a generar un test llamado **`Login_WithShortPassword_Returns400`**. Le mandamos
-  `password = "123"`; procesamos y esperamos `400 Bad Request` con el diccionario `errors` (el
-  `ValidationException` lo convierte el middleware).
-
-- Vamos a generar un test llamado **`Refresh_WithValidCookie_Returns200AndRotatesCookie`**. Le
-  hacemos login, le mandamos `POST /api/v1/auth/refresh` con la cookie `matehr_refresh_token` que
-  devolvió el login; procesamos y esperamos `200`, un `accessToken` nuevo y un `Set-Cookie` cuyo
-  refresh token sea **distinto** al de la cookie enviada (rotación).
-
-- Vamos a generar un test llamado **`Refresh_WithReusedCookie_Returns401`**. Le hacemos login,
-  refrescamos una vez (ya rotó) y mandamos **la cookie vieja** del primer refresh; procesamos y
-  esperamos `401 Unauthorized` — es el protocolo de reuso, y de paso los demás tokens del user
-  quedaron revocados.
-
-- Vamos a generar un test llamado **`Me_WithoutToken_Returns401`**. Le mandamos
-  `GET /api/v1/auth/me` sin header `Authorization`; procesamos y esperamos `401`.
-
-- Vamos a generar un test llamado **`Me_WithValidToken_Returns200WithUserResponse`**. Le generamos
-  un access token para un user creado en el setup y se lo mandamos en `Authorization: Bearer <token>`;
-  procesamos y esperamos `200` con el `UserResponse` (mismo `id` y `email` del user).
-
-- Vamos a generar un test llamado **`Logout_WithCookie_Returns204AndDeletesCookie`**. Le hacemos
-  login, mandamos `POST /api/v1/auth/logout` con la cookie; procesamos y esperamos
-  `204 No Content` y un `Set-Cookie` con `matehr_refresh_token=` vacío / expirado (borrada).
-
-**Aceptación**
-- [ ] Login 200/401/400 con cookie HttpOnly
-- [ ] Refresh rota la cookie y el reuso devuelve 401
-- [ ] `me` 401/200 y logout 204
-
----
-
-#### TEST-30 · `TenantsControllerTests`
-
-**Archivo:** `MateHR.Api.Tests/Controllers/v1/TenantsControllerTests.cs`
-
-Todos los endpoints cuelgan de `[Authorize(Policy = RequireSuperAdmin)]`.
-
-- Vamos a generar un test llamado **`Endpoints_WithoutToken_Returns401`**. Le mandamos
-  `POST /api/v1/tenants` sin `Authorization`; procesamos y esperamos `401`. Repetimos la historia
-  con **`Endpoints_WithAdminToken_Returns403`**: le mandamos la misma request con un token de rol
-  `Admin` y esperamos `403 Forbidden` (la política es SuperAdmin).
-
-- Vamos a generar un test llamado **`Create_WithSuperAdminToken_Returns201WithLocation`**. Le
-  mandamos `POST /api/v1/tenants` con token SuperAdmin y body válido (`name`, `cuit` de 11 dígitos,
-  `ownerEmail`, `industry: "Technology"`); procesamos y esperamos `201 Created`, un header
-  `Location` apuntando a `/api/v1/tenants/{id}` y el body con `slug == "acme-corp"` generado.
-
-- Vamos a generar un test llamado **`Create_DuplicateSlug_Returns409`**. Le mandamos dos veces el
-  mismo body (o pre-cargamos un tenant con el mismo nombre); procesamos el segundo request y
-  esperamos `409 Conflict`.
-
-- Vamos a generar un test llamado **`Create_InvalidDto_Returns400WithErrors`**. Le mandamos un body
-  con `name = ""` y `cuit = "abc"`; procesamos y esperamos `400` con el objeto `errors` que agrupa
-  por campo.
-
-- Vamos a generar un test llamado **`GetAll_WithStatusFilter_Returns200WithPagedResult`**. Le
-  sembramos tenants `Active` y `Suspended` y le mandamos `GET /api/v1/tenants?status=Active`; el
-  procesamos y esperamos `200` con `items` solo de los `Active` y `totalCount` acorde.
-
-- Vamos a generar un test llamado **`GetById_ExistingTenant_Returns200`**. Le mandamos
-  `GET /api/v1/tenants/{id}` con un id sembrado; procesamos y esperamos `200` con ese tenant.
-
-- Vamos a generar un test llamado **`GetById_UnknownTenant_Returns404`**. Le mandamos
-  `GET /api/v1/tenants/{Guid.NewGuid()}`; procesamos y esperamos `404`.
-
-- Vamos a generar un test llamado **`GetBySlug_ExistingSlug_Returns200`** y
-  **`GetBySlug_UnknownSlug_Returns404`**. Le mandamos `GET /api/v1/tenants/slug/acme-corp` (con el
-  tenant sembrado) esperando `200`, y después `GET .../slug/no-existe` esperando `404`.
-
-- Vamos a generar un test llamado **`Update_ExistingTenant_Returns200`**. Le mandamos
-  `PUT /api/v1/tenants/{id}` con un DTO válido y distinto; procesamos y esperamos `200` con los
-  valores nuevos.
-
-- Vamos a generar un test llamado **`Update_DuplicateSlugOfAnotherTenant_Returns409`**. Le
-  pre-cargamos dos tenants, y le mandamos al segundo un `PUT` con el nombre del primero; procesamos
-  y esperamos `409 Conflict`.
-
-- Vamos a generar un test llamado **`ChangeStatus_WithSuperAdminToken_Returns200`**. Le mandamos
-  `PATCH /api/v1/tenants/{id}/status` con body `{"status":"Suspended"}`; procesamos y esperamos
-  `200` con `status == "Suspended"`. Repetimos la historia con
-  **`ChangeRecruitmentMode_...Returns200`** (`PATCH .../recruitment-mode`,
-  `{"recruitmentMode":"External"}`) y **`ChangeSubscriptionType_...Returns200`**
-  (`PATCH .../subscription-type`, `{"subscriptionType":"Yearly"}`).
-
-**Aceptación**
-- [ ] 401 sin token y 403 con rol `Admin` en todos los endpoints
-- [ ] CRUD completo: 201 con `Location`, 200, 404 y 409
-- [ ] Los 3 PATCH responden 200 con el valor actualizado
-
----
-
-#### TEST-31 · `UsersControllerTests`
-
-**Archivo:** `MateHR.Api.Tests/Controllers/v1/UsersControllerTests.cs`
-
-- Vamos a generar un test llamado **`Create_WithoutToken_Returns401`**. Le mandamos
-  `POST /api/v1/users` sin `Authorization`; procesamos y esperamos `401`.
-
-- Vamos a generar un test llamado **`Create_WithAdminToken_Returns403`**. Le mandamos la misma
-  request con token de rol `Admin`; procesamos y esperamos `403`.
-
-- Vamos a generar un test llamado **`Create_SuperAdminValidUser_Returns201WithUserResponse`**. Le
-  mandamos `POST /api/v1/users` con token SuperAdmin y body
-  `{"firstName":"Ana","lastName":"Pérez","email":"ana@acme.com","password":"secreta123","role":"Recruiter","tenantId":"<guid de un tenant sembrado>"}`;
-  procesamos y esperamos `201 Created`, header `Location` con `/api/v1/auth/me` y body con
-  `email == "ana@acme.com"` y `role == "Recruiter"`.
-
-- Vamos a generar un test llamado **`Create_DuplicateEmail_Returns409`**. Le mandamos dos veces el
-  mismo email (o pre-cargamos el user); procesamos el segundo y esperamos `409`.
-
-- Vamos a generar un test llamado **`Create_InvalidDto_Returns400WithErrors`**. Le mandamos un body
-  con `password = "123"` y `email = "no-es-un-mail"`; procesamos y esperamos `400` con `errors`.
-
-- Vamos a generar un test llamado **`Create_SuperAdminWithTenantId_Returns400`**. Le mandamos un
-  body con `"role":"SuperAdmin"` y `tenantId` seteado; procesamos y esperamos `400` (lo rechaza el
-  `CreateUserRequestValidator` con el mensaje "Un SuperAdmin no pertenece a un tenant.").
-
-**Aceptación**
-- [ ] 401/403 en los endpoints protegidos
-- [ ] 201 feliz, 409 duplicado, 400 inválido y 400 por SuperAdmin con tenant
-
----
-
-#### TEST-32 · `ExceptionMiddlewareTests`
-
-**Archivo:** `MateHR.Api.Tests/Middleware/ExceptionMiddlewareTests.cs`
-
-Podemos testear el middleware en forma unitaria sin levantar toda la API: creamos un `HttpContext`
-con un `RequestAborted`, un `next` que lance la excepción a probar, ejecutamos
-`middleware.InvokeAsync(context)` y verificamos el `StatusCode` del response.
-
-Para cada test la historia es la misma: le pasamos una excepción distante al `next`, procesamos la
-invocación y esperamos un código de estado (y, de paso, el body `{ message, traceId }`).
-
-- Vamos a generar un test llamado **`InvokeAsync_KeyNotFoundException_Returns404`**. Le hacemos
-  lanzar `new KeyNotFoundException("No se encontro el tenant")` desde el `next`; procesamos
-  `InvokeAsync(context)` y esperamos `404`.
-
-- Vamos a generar un test llamado **`InvokeAsync_SlugAlreadyExistsException_Returns409`**. Le
-  hacemos lanzar `new SlugAlreadyExistsException("acme-corp")`; procesamos y esperamos `409`.
-
-- Vamos a generar un test llamado **`InvokeAsync_EmailAlreadyExistsException_Returns409`**. Le
-  hacemos lanzar `new EmailAlreadyExistsException("ana@acme.com")`; procesamos y esperamos `409`.
-
-- Vamos a generar un test llamado **`InvokeAsync_InvalidCredentialsException_Returns401`**. Le
-  hacemos lanzar `new InvalidCredentialsException()`; procesamos y esperamos `401`.
-
-- Vamos a generar un test llamado **`InvokeAsync_ArgumentException_Returns400`**. Le hacemos lanzar
-  `new ArgumentException("mensaje")`; procesamos y esperamos `400`.
-
-- Vamos a generar un test llamado **`InvokeAsync_ValidationException_Returns400WithErrors`**. Le
-  hacemos lanzar `new FluentValidation.ValidationException(errors)` con dos errores de campos
-  distintos; procesamos y esperamos `400` y un body JSON cuyo `errors` tenga una clave por
-  `PropertyName` con arrays de mensajes.
-
-- Vamos a generar un test llamado **`InvokeAsync_GenericException_Returns500`**. Le hacemos lanzar
-  `new Exception("boom")`; procesamos y esperamos `500` y que el `message` sea
-  `"Ocurrio un error inesperado."` (no filtrar el texto de la excepción al cliente).
-
-- Vamos a generar un test llamado **`InvokeAsync_HttpRequestException_Returns502`**. Le hacemos
-  lanzar `new HttpRequestException("falla externa")`; procesamos y esperamos `502` con el mensaje
-  genérico "No se pudo comunicar con un servicio externo.".
-
-**Aceptación**
-- [ ] Los 7 mapeos de excepción → status cubiertos (404, 409 x2, 401, 400, 400 con `errors`, 500)
-- [ ] El body de error trae `message` y `traceId`, sin exponer detalles internos en el 500
-
----
-
-## Orden de ejecución sugerido (para los tests)
-
-```
-Bloque 5a — Domain     TEST-01 … TEST-07   (primeros: cero dependencias, más rápidos)
-Bloque 5b — Application TEST-08 → guardián: TEST-09, 10, 15, 16
-Bloque 5c — Infrastructure TEST-24, 25 → después 21-23 (necesitan el contexto InMemory)
-Bloque 5d — Api        TEST-00 (partial Program) y TEST-29, 30 (últimos)
+```csharp
+namespace MateHR.Domain.Recruitment.Common
+{
+    // Helper del módulo para no repetir ValidateAndTrim en cada entidad.
+    public static class RecruitmentGuard
+    {
+        public static string RequiredName(string? name, int maxLength, string paramName = "Name") { /* trim + throw ArgumentException */ }
+        public static TEnum ValidEnum<TEnum>(TEnum value, string paramName = "value") where TEnum : struct, Enum { /* Enum.IsDefined -> ArgumentOutOfRangeException */ }
+        public static Guid NotEmptyGuid(Guid value, string paramName = "value") { /* Guid.Empty -> ArgumentException */ }
+        public static int NonNegative(int value, string paramName = "value") { /* < 0 -> ArgumentOutOfRangeException */ }
+    }
+}
 ```
 
-No hace falta respetar el orden al pie de la letra, pero arrancar por Domain te da confianza
-rápida y te familiariza con los objetos sin tener que armar mocks. Los dos que no deberías
-delegar o posponer para el final son **TEST-09/10 (Create/Update Tenant)** y
-**TEST-15/16 (Login y Refresh)**, porque son el corazón del negocio y de la seguridad.
+```csharp
+public sealed class EntityInUseException : Exception
+{
+    public EntityInUseException(string entity, Guid id)
+        : base($"No se puede eliminar {entity} {id} porque esta en uso.") { }
+}
+
+public sealed class DuplicateEntityNameException : Exception
+{
+    public string Name { get; }
+    public DuplicateEntityNameException(string name)
+        : base($"Ya existe un registro con el nombre '{name}'.") { Name = name; }
+}
+
+public sealed class JobAlreadyClosedException : InvalidOperationException
+{
+    public Guid JobId { get; }
+    public JobAlreadyClosedException(Guid jobId)
+        : base($"El job {jobId} ya esta cerrado.") { JobId = jobId; }
+}
+```
+
+**Criterios de aceptación**
+- [x] `RecruitmentGuard.RequiredName` trimmea, corta vacíos y excede longitud
+- [x] Enums fijan sus valores numéricos (contrato de API/DB)
+
+**Tests (REC-00.1-T)** — `Tests/Domain/Recruitment/Enums/RecruitmentEnumsTests.cs` y `Common/RecruitmentGuardTests.cs`:
+`SeniorityLevel_Trainee_IsOne`, `ClientType_Internal_IsOne`, `Province_BuenosAires_IsOne`, `Country_Argentina_IsOne`,
+`RequiredName_Whitespace_ThrowsArgumentException`, `RequiredName_TooLong_ThrowsArgumentException`, `RequiredName_TrimsValue`,
+`ValidEnum_Undefined_ThrowsArgumentOutOfRangeException`, `NotEmptyGuid_Empty_ThrowsArgumentException`, `NonNegative_Negative_ThrowsArgumentOutOfRangeException`.
+
+## Subtarea REC-00.2 — Infrastructure + tests
+
+**Estado:** ⏸️ Pendiente incremental.
+
+**Nota:** No se agregan todos los DbSets de golpe. Se irán completando entidad por entidad junto con cada subtarea **REC-xx.2** (DbSet + configuración EF + repositorio). La migración `AddRecruitmentModule` se creará una vez que estén las configuraciones de todas las entidades necesarias, siguiendo el enfoque del backlog.
+
+**Archivos:** `MateHR.Infrastructure/Persistance/ApplicationDbContext.cs` (DbSets + `StampUpdatedAt`),
+migración `AddRecruitmentModule`.
+
+**Código:**
+
+```csharp
+// ApplicationDbContext
+public DbSet<JobStatus> JobStatuses { get; set; }
+public DbSet<Area> Areas { get; set; }
+public DbSet<SubArea> SubAreas { get; set; }
+public DbSet<Client> Clients { get; set; }
+public DbSet<ProcessStep> ProcessSteps { get; set; }
+public DbSet<SearchReason> SearchReasons { get; set; }
+public DbSet<CandidateProcessStatus> CandidateProcessStatuses { get; set; }
+public DbSet<Job> Jobs { get; set; }
+public DbSet<JobStep> JobSteps { get; set; }
+public DbSet<Candidate> Candidates { get; set; }
+public DbSet<SelectionProcess> SelectionProcesses { get; set; }
+```
+
+`StampUpdatedAt()` suma `ChangeTracker.Entries<Job>()` (y los catálogos/entidades que tengan `UpdatedAt`).
+
+Comando de migración (crear cuando estén todas las configuraciones de las tareas REC-01…REC-10):
+
+```bash
+dotnet ef migrations add AddRecruitmentModule --project MateHR.Infrastructure --startup-project MateHR.Api
+dotnet ef database update --project MateHR.Infrastructure --startup-project MateHR.Api
+```
+
+**Criterios de aceptación**
+- [ ] `OnModelCreating` levanta las configuraciones de `Configurations/Recruitment/*`
+- [ ] La migración aplica limpia sobre el esquema actual
+
+**Tests (REC-00.2-T):** sin tests unitarios propios; se valida con los tests de repositorio de cada
+tarea y con aplicar la migración en el CI.
+
+## Subtarea REC-00.3 — Application + tests
+
+**Estado:** ✅ Completado (2026-10-23).
+
+**Archivos:** `MateHR.Application/Recruitment/DependencyInjection.cs`,
+`MateHR.Application/DependencyInjection.cs` (llamar `services.AddRecruitment()`).
+
+**Código:**
+
+```csharp
+// Application/Recruitment/DependencyInjection.cs
+public static class DependencyInjection
+{
+    public static IServiceCollection AddRecruitment(this IServiceCollection services)
+    {
+        // se completa tarea por tarea:
+        // services.AddScoped<ICreateArea, CreateArea>(); ...
+        return services;
+    }
+}
+```
+
+**Criterios de aceptación**
+- [x] `AddApplication()` llama `AddRecruitment()`
+- [x] `AssertConfigurationIsValid` pasa con los profiles nuevos
+
+**Tests (REC-00.3-T)** — extender `Tests/Application/Common/MappingConfigurationTests.cs`:
+`RecruitmentMappings_AssertConfigurationIsValid_Passes`.
+
+## Subtarea REC-00.4 — Api + tests
+
+**Estado:** ✅ Completado (2026-10-23).
+
+**Archivos:** `MateHR.Api/Authorization/AuthPolicies.cs`, `MateHR.Api/Program.cs`,
+`MateHR.Api/Middleware/ExceptionMiddleware.cs`.
+
+**Código:**
+
+```csharp
+// AuthPolicies
+public const string RequireTenantAdmin = nameof(RequireTenantAdmin);
+public const string RequireRecruiter = nameof(RequireRecruiter);
+public const string RecruiterRole = "Recruiter";
+
+// Program.cs
+options.AddPolicy(AuthPolicies.RequireTenantAdmin, p => p.RequireRole(AuthPolicies.AdminRole));
+options.AddPolicy(AuthPolicies.RequireRecruiter, p => p.RequireRole(AuthPolicies.AdminRole, AuthPolicies.RecruiterRole));
+```
+
+```csharp
+// ExceptionMiddleware: agregar al switch
+EntityInUseException or DuplicateEntityNameException or InvalidOperationException => StatusCodes.Status409Conflict,
+UnauthorizedAccessException => StatusCodes.Status403Forbidden,
+```
+
+**Criterios de aceptación**
+- [x] `Recruiter` recibe 403 en endpoints `RequireTenantAdmin`
+- [x] `Admin` pasa en ambos; `SuperAdmin`/`Employee` reciben 403 en recruitment interno
+
+**Tests (REC-00.4-T)** — `Tests/Api/Recruitment/*`:
+`RequireTenantAdmin_WithRecruiterToken_Returns403`, `RequireRecruiter_WithRecruiterToken_Passes`,
+`InvokeAsync_EntityInUseException_Returns409`, `InvokeAsync_DuplicateEntityNameException_Returns409`,
+`InvokeAsync_UnauthorizedAccessException_Returns403`.
+
+---
+
+# TAREA REC-01 · Estados de job (`JobStatus`)
+
+**US:** Como admin de tenant quiero gestionar los estados de job (ej. Abierto, En proceso, Cerrado,
+Pausado) para clasificar mis búsquedas.
+
+**Depende de:** REC-00
+
+## Subtarea REC-01.1 — Domain + tests
+
+**Archivo:** `MateHR.Domain/Recruitment/Entities/JobStatus.cs`.
+
+**Código:**
+
+```csharp
+public class JobStatus
+{
+    public const int NameMaxLength = 100;
+    private JobStatus() { }
+
+    public JobStatus(Guid tenantId, string name)
+    {
+        RecruitmentGuard.NotEmptyGuid(tenantId, nameof(tenantId));
+        Id = Guid.NewGuid();
+        TenantId = tenantId;
+        Name = RecruitmentGuard.RequiredName(name, NameMaxLength, nameof(name));
+    }
+
+    public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; }
+    public string Name { get; private set; } = string.Empty;
+
+    public void Rename(string name) =>
+        Name = RecruitmentGuard.RequiredName(name, NameMaxLength, nameof(name));
+}
+```
+
+**Tests (REC-01.1-T)** — `Tests/Domain/Recruitment/Entities/JobStatusTests.cs`:
+`Constructor_ValidData_SetsDefaults`, `Constructor_EmptyTenant_ThrowsArgumentException`,
+`Constructor_WhitespaceName_ThrowsArgumentException`, `Constructor_NameTooLong_ThrowsArgumentException`,
+`Rename_ValidName_ChangesName`, `Rename_Whitespace_ThrowsAndKeepsName`.
+
+## Subtarea REC-01.2 — Infrastructure + tests
+
+**Archivos:** `MateHR.Infrastructure/Persistance/Configurations/Recruitment/JobStatusConfiguration.cs`,
+`MateHR.Infrastructure/Persistance/Repositories/JobStatusRepository.cs`,
+`MateHR.Domain/Recruitment/Interfaces/IJobStatusRepository.cs`.
+
+**Código (contrato de catálogo):**
+
+```csharp
+public interface IJobStatusRepository
+{
+    Task<JobStatus> GetByIdAsync(Guid tenantId, Guid id, CancellationToken ct = default);
+    Task<PagedResult<JobStatus>> GetAllAsync(Guid tenantId, int pageNumber, int pageSize, CancellationToken ct = default);
+    Task<bool> NameExistsAsync(Guid tenantId, string name, Guid? excludeId, CancellationToken ct = default);
+    Task<JobStatus> CreateAsync(JobStatus entity, CancellationToken ct = default);
+    Task<JobStatus> RenameAsync(Guid tenantId, Guid id, string name, CancellationToken ct = default);
+    Task DeleteAsync(Guid tenantId, Guid id, CancellationToken ct = default);
+}
+```
+
+```csharp
+public class JobStatusRepository : IJobStatusRepository
+{
+    private readonly ApplicationDbContext _context;
+    public JobStatusRepository(ApplicationDbContext context) => _context = context;
+
+    public async Task<JobStatus> GetByIdAsync(Guid tenantId, Guid id, CancellationToken ct = default)
+    {
+        var entity = await _context.JobStatuses.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == id && s.TenantId == tenantId, ct);
+        if (entity is null) throw new KeyNotFoundException($"No se encontro el estado con ID {id}");
+        return entity;
+    }
+
+    public Task<bool> NameExistsAsync(Guid tenantId, string name, Guid? excludeId, CancellationToken ct = default)
+        => _context.JobStatuses.AsNoTracking().AnyAsync(
+            s => s.TenantId == tenantId && s.Name == name && (excludeId == null || s.Id != excludeId), ct);
+
+    public async Task<JobStatus> RenameAsync(Guid tenantId, Guid id, string name, CancellationToken ct = default)
+    {
+        var entity = await GetByIdAsync(tenantId, id, ct);
+        entity.Rename(name);                       // muta vía método de la entidad (regla del ReadME)
+        await _context.SaveChangesAsync(ct);
+        return entity;
+    }
+    // CreateAsync / DeleteAsync: mismo patrón.
+}
+```
+
+```csharp
+// JobStatusConfiguration
+builder.ToTable("JobStatuses");
+builder.HasKey(s => s.Id);
+builder.Property(s => s.Id).ValueGeneratedNever();
+builder.Property(s => s.Name).HasMaxLength(JobStatus.NameMaxLength).IsRequired();
+builder.HasIndex(s => new { s.TenantId, s.Name });
+```
+
+**Tests (REC-01.2-T)** — `Tests/Infrastructure/Recruitment/Repositories/JobStatusRepositoryTests.cs`:
+`GetByIdAsync_Existing_ReturnsEntity`, `GetByIdAsync_Unknown_ThrowsKeyNotFoundException`,
+`GetByIdAsync_OtherTenant_ThrowsKeyNotFoundException`, `GetAllAsync_PagesAndCounts`,
+`NameExistsAsync_Duplicate_ReturnsTrue`, `NameExistsAsync_ExcludingOwnId_ReturnsFalse`,
+`CreateAsync_Persists`, `RenameAsync_ChangesName`, `DeleteAsync_Removes`.
+
+> Trampa InMemory: no aplica índices únicos; el chequeo de duplicado va en Application.
+
+## Subtarea REC-01.3 — Application + tests
+
+**Archivos:** carpeta `MateHR.Application/Recruitment/JobStatuses/`
+(`Commands/CreateJobStatus.cs`, `UpdateJobStatus.cs`, `DeleteJobStatus.cs`;
+`Queries/GetJobStatusById.cs`, `GetJobStatuses.cs`; `DTOs/…`; `Validators/…`;
+`Interfaces/…`; `Mappings/JobStatusMapping.cs`).
+
+**Código (esqueleto de use case, patrón de todo el módulo):**
+
+```csharp
+public class CreateJobStatus : ICreateJobStatus
+{
+    private readonly IJobStatusRepository _repository;
+    private readonly ITenantContext _tenantContext;
+    private readonly IMapper _mapper;
+    private readonly IValidator<CreateJobStatusDto> _validator;
+
+    public async Task<JobStatusResponse> ExecuteAsync(CreateJobStatusDto dto, CancellationToken ct = default)
+    {
+        var validation = await _validator.ValidateAsync(dto, ct);
+        if (!validation.IsValid) throw new ValidationException(validation.Errors);
+
+        var tenantId = _tenantContext.CurrentTenantId
+            ?? throw new UnauthorizedAccessException("No hay tenant en el contexto.");
+
+        if (await _repository.NameExistsAsync(tenantId, dto.Name.Trim(), null, ct))
+            throw new DuplicateEntityNameException(dto.Name.Trim());
+
+        var entity = await _repository.CreateAsync(new JobStatus(tenantId, dto.Name), ct);
+        return _mapper.Map<JobStatusResponse>(entity);
+    }
+}
+```
+
+```csharp
+// CreateJobStatusDtoValidator
+RuleFor(x => x.Name).NotEmpty().MaximumLength(JobStatus.NameMaxLength);
+
+// JobStatusMapping
+CreateMap<JobStatus, JobStatusResponse>();
+CreateMap<PagedResult<JobStatus>, PagedResult<JobStatusResponse>>();
+```
+
+**Tests (REC-01.3-T)** — `Tests/Application/Recruitment/JobStatuses/*Tests.cs`:
+happy path con `Verify`, nombre duplicado → `DuplicateEntityNameException`,
+tenant nulo → `UnauthorizedAccessException`, DTO inválido → `ValidationException`,
+delete referenciado → `EntityInUseException`, `GetJobStatuses` forwards paging + mapper real.
+
+## Subtarea REC-01.4 — Api + tests
+
+**Archivo:** `MateHR.Api/Controllers/v1/Recruitment/JobStatusesController.cs`.
+
+| Método | Ruta | Policy |
+|---|---|---|
+| POST | `/api/v1/recruitment/job-statuses` | RequireTenantAdmin |
+| GET | `/api/v1/recruitment/job-statuses` | RequireRecruiter |
+| GET | `/api/v1/recruitment/job-statuses/{id}` | RequireRecruiter |
+| PUT | `/api/v1/recruitment/job-statuses/{id}` | RequireTenantAdmin |
+| DELETE | `/api/v1/recruitment/job-statuses/{id}` | RequireTenantAdmin |
+
+**Código (patrón de controller, molde `TenantsController`):**
+
+```csharp
+[ApiController]
+[Route("api/v1/recruitment/job-statuses")]
+[Produces("application/json")]
+[Authorize(Policy = AuthPolicies.RequireTenantAdmin)]
+public class JobStatusesController : ControllerBase
+{
+    [HttpPost]
+    [ProducesResponseType(typeof(JobStatusResponse), StatusCodes.Status201Created)]
+    public async Task<ActionResult<JobStatusResponse>> Create([FromBody] CreateJobStatusDto request, CancellationToken ct)
+    {
+        var created = await _create.ExecuteAsync(request, ct);
+        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+    }
+    // GET lista -> [Authorize(Policy = AuthPolicies.RequireRecruiter)] por método
+}
+```
+
+**Tests (REC-01.4-T)** — `Tests/Api/Recruitment/JobStatusesControllerTests.cs`:
+`Endpoints_WithoutToken_Returns401`, `Endpoints_WithEmployeeToken_Returns403`,
+`Create_WithAdminToken_Returns201WithLocation`, `Create_DuplicateName_Returns409`,
+`GetAll_WithRecruiterToken_Returns200`, `Delete_Referenced_Returns409`.
+
+---
+
+# TAREA REC-02 · Áreas (`Area`)
+
+**US:** Como admin de tenant quiero crear áreas (ej. Tecnología, Ventas) para asignarlas a los jobs.
+
+**Depende de:** REC-00
+
+## Subtarea REC-02.1 — Domain + tests
+
+**Archivo:** `MateHR.Domain/Recruitment/Entities/Area.cs` — misma forma que `JobStatus`
+(Id, TenantId, Name + `Rename`), con `NameMaxLength = 100`.
+
+**Tests (REC-02.1-T)** — `AreaTests.cs`: mismos casos que `JobStatusTests`.
+
+## Subtarea REC-02.2 — Infrastructure + tests
+
+**Archivos:** `AreaConfiguration.cs`, `AreaRepository.cs`, `IAreaRepository.cs`
+(mismo contrato de catálogo que REC-01.2).
+
+**Tests (REC-02.2-T)** — `AreaRepositoryTests.cs`: mismos casos que `JobStatusRepositoryTests`.
+Además `GetByIdAsync_OtherTenant_ThrowsKeyNotFoundException` (clave de DEC-REC-2).
+
+## Subtarea REC-02.3 — Application + tests
+
+**Archivos:** `MateHR.Application/Recruitment/Areas/` (CRUD completo).
+
+**Tests (REC-02.3-T)** — `Tests/Application/Recruitment/Areas/*Tests.cs`: espejo de REC-01.3-T.
+
+## Subtarea REC-02.4 — Api + tests
+
+**Archivo:** `AreasController.cs` con las mismas 5 rutas/policies de REC-01.4
+(`/api/v1/recruitment/areas`).
+
+**Tests (REC-02.4-T)** — `AreasControllerTests.cs`: espejo de REC-01.4-T.
+
+---
+
+# TAREA REC-03 · Subáreas (`SubArea`)
+
+**US:** Como admin de tenant quiero crear subáreas dentro de un área (ej. Backend dentro de
+Tecnología), para afinar la búsqueda.
+
+**Depende de:** REC-00, REC-02 (valida contra `Area`)
+
+## Subtarea REC-03.1 — Domain + tests
+
+**Archivo:** `MateHR.Domain/Recruitment/Entities/SubArea.cs`.
+
+**Código:**
+
+```csharp
+public class SubArea
+{
+    public const int NameMaxLength = 100;
+    private SubArea() { }
+
+    public SubArea(Guid tenantId, Guid areaId, string name)
+    {
+        RecruitmentGuard.NotEmptyGuid(tenantId, nameof(tenantId));
+        RecruitmentGuard.NotEmptyGuid(areaId, nameof(areaId));
+        Id = Guid.NewGuid();
+        TenantId = tenantId;
+        AreaId = areaId;
+        Name = RecruitmentGuard.RequiredName(name, NameMaxLength, nameof(name));
+    }
+
+    public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; }
+    public Guid AreaId { get; private set; }
+    public string Name { get; private set; } = string.Empty;
+
+    public void Rename(string name) => Name = RecruitmentGuard.RequiredName(name, NameMaxLength, nameof(name));
+    public void MoveToArea(Guid areaId) { RecruitmentGuard.NotEmptyGuid(areaId, nameof(areaId)); AreaId = areaId; }
+}
+```
+
+**Tests (REC-03.1-T)** — `SubAreaTests.cs`: constructor válido, tenant/area vacíos, nombre vacío/largo,
+`Rename`, `MoveToArea` válido e inválido.
+
+## Subtarea REC-03.2 — Infrastructure + tests
+
+**Archivos:** `SubAreaConfiguration.cs` (FK `AreaId` → `Areas` con `Restrict` y filtro por tenant),
+`SubAreaRepository.cs`, `ISubAreaRepository.cs`.
+
+**Código (punto fino):**
+
+```csharp
+// además de GetByIdAsync filtrando por tenant, el repo valida que el área exista en el tenant
+public async Task<SubArea> CreateAsync(SubArea subArea, CancellationToken ct = default)
+{
+    var areaExists = await _context.Areas.AsNoTracking()
+        .AnyAsync(a => a.Id == subArea.AreaId && a.TenantId == subArea.TenantId, ct);
+    if (!areaExists) throw new KeyNotFoundException($"No se encontro el area {subArea.AreaId}");
+    await _context.SubAreas.AddAsync(subArea, ct);
+    await _context.SaveChangesAsync(ct);
+    return subArea;
+}
+```
+
+**Tests (REC-03.2-T)** — `SubAreaRepositoryTests.cs`:
+`Create_UnknownArea_ThrowsKeyNotFoundException`, `Create_OtherTenantArea_ThrowsKeyNotFoundException`,
+`GetAllAsync_FiltersByAreaId`, `GetByIdAsync_OtherTenant_ThrowsKeyNotFoundException`, y los genéricos de catálogo.
+
+## Subtarea REC-03.3 — Application + tests
+
+**Archivos:** `MateHR.Application/Recruitment/SubAreas/`.
+
+**Regla extra:** el use case valida que el `AreaId` exista en el tenant
+(`IAreaRepository.GetByIdAsync`); si no → `KeyNotFoundException` (404).
+
+**Tests (REC-03.3-T)** — `Tests/Application/Recruitment/SubAreas/*Tests.cs`:
+happy path (verifica `AreaId`), área inexistente → `KeyNotFoundException`,
+listado filtrando por `areaId`, nombre duplicado dentro del área.
+
+## Subtarea REC-03.4 — Api + tests
+
+**Archivo:** `SubAreasController.cs` — rutas bajo `/api/v1/recruitment/sub-areas`
+(incluye `GET ?areaId=`).
+
+**Tests (REC-03.4-T)** — `SubAreasControllerTests.cs`: 401/403, 201, listado por área, 404 área inexistente.
+
+---
+
+# TAREA REC-04 · Clientes (`Client`)
+
+**US:** Como admin de tenant quiero mantener mis clientes indicando si son **internos** o
+**externos**, para asociarlos a los jobs.
+
+**Depende de:** REC-00
+
+## Subtarea REC-04.1 — Domain + tests
+
+**Archivo:** `MateHR.Domain/Recruitment/Entities/Client.cs` (usa `Enums.ClientType`).
+
+**Código:**
+
+```csharp
+public class Client
+{
+    public const int NameMaxLength = 150;
+    private Client() { }
+
+    public Client(Guid tenantId, string name, ClientType clientType)
+    {
+        RecruitmentGuard.NotEmptyGuid(tenantId, nameof(tenantId));
+        RecruitmentGuard.ValidEnum(clientType);
+        Id = Guid.NewGuid();
+        TenantId = tenantId;
+        Name = RecruitmentGuard.RequiredName(name, NameMaxLength, nameof(name));
+        ClientType = clientType;
+    }
+
+    public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; }
+    public string Name { get; private set; } = string.Empty;
+    public ClientType ClientType { get; private set; }
+
+    public void Update(string name, ClientType clientType)
+    {
+        RecruitmentGuard.ValidEnum(clientType);
+        Name = RecruitmentGuard.RequiredName(name, NameMaxLength, nameof(name));
+        ClientType = clientType;
+    }
+}
+```
+
+**Tests (REC-04.1-T)** — `ClientTests.cs`:
+`Constructor_ValidData_SetsDefaults`, `Constructor_EmptyTenant_Throws…`,
+`Constructor_UndefinedClientType_ThrowsArgumentOutOfRangeException`, `Constructor_WhitespaceName_Throws…`,
+`Update_ValidData_UpdatesAll`, `Update_UndefinedType_ThrowsAndKeepsValues`.
+
+## Subtarea REC-04.2 — Infrastructure + tests
+
+**Archivos:** `ClientConfiguration.cs` (`ClientType` con `HasConversion<int>()`),
+`ClientRepository.cs`, `IClientRepository.cs`.
+
+**Tests (REC-04.2-T)** — `ClientRepositoryTests.cs`: genéricos de catálogo + `Create_PersistsClientType`.
+
+## Subtarea REC-04.3 — Application + tests
+
+**Archivos:** `MateHR.Application/Recruitment/Clients/`.
+
+**Tests (REC-04.3-T)** — `Tests/Application/Recruitment/Clients/*Tests.cs`:
+happy path con `ClientType`, enum inválido → `ValidationException`, duplicado, DTO inválido, delete referenciado.
+
+## Subtarea REC-04.4 — Api + tests
+
+**Archivo:** `ClientsController.cs` — `/api/v1/recruitment/clients`
+(`clientType` viaja como texto por `JsonStringEnumConverter`).
+
+**Tests (REC-04.4-T)** — `ClientsControllerTests.cs`: 401/403, 201 con `clientType`,
+400 enum inválido, 409 duplicado.
+
+---
+
+# TAREA REC-05 · Pasos de proceso (`ProcessStep`)
+
+**US:** Como admin de tenant quiero definir los pasos de un proceso (ej. Screening, Entrevista
+técnica, Oferta) para armar el pipeline del job.
+
+**Depende de:** REC-00
+
+## Subtarea REC-05.1 — Domain + tests
+
+**Archivo:** `ProcessStep.cs` — igual a `Area` (Id, TenantId, Name + `Rename`), `NameMaxLength = 100`.
+**Tests (REC-05.1-T)** — `ProcessStepTests.cs`: mismos casos que `JobStatusTests`.
+
+## Subtarea REC-05.2 — Infrastructure + tests
+
+**Archivos:** `ProcessStepConfiguration.cs`, `ProcessStepRepository.cs`, `IProcessStepRepository.cs`.
+**Tests (REC-05.2-T)** — `ProcessStepRepositoryTests.cs`: genéricos de catálogo.
+
+## Subtarea REC-05.3 — Application + tests
+
+**Archivos:** `MateHR.Application/Recruitment/ProcessSteps/`.
+**Tests (REC-05.3-T)** — espejo de REC-01.3-T.
+
+## Subtarea REC-05.4 — Api + tests
+
+**Archivo:** `ProcessStepsController.cs` — `/api/v1/recruitment/process-steps`.
+**Tests (REC-05.4-T)** — espejo de REC-01.4-T.
+
+---
+
+# TAREA REC-06 · Motivos de búsqueda (`SearchReason`)
+
+**US:** Como admin de tenant quiero catalogar el motivo de la búsqueda (Reemplazo, Aumento de
+equipo, Inversión, etc.) para reportar por qué se abre un job.
+
+**Depende de:** REC-00
+
+## Subtarea REC-06.1 — Domain + tests
+
+**Archivo:** `SearchReason.cs` — igual a `Area`, `NameMaxLength = 150`.
+**Tests (REC-06.1-T)** — `SearchReasonTests.cs`: mismos casos que `JobStatusTests`.
+
+## Subtarea REC-06.2 — Infrastructure + tests
+
+**Archivos:** `SearchReasonConfiguration.cs`, `SearchReasonRepository.cs`, `ISearchReasonRepository.cs`.
+**Tests (REC-06.2-T)** — `SearchReasonRepositoryTests.cs`: genéricos de catálogo.
+
+## Subtarea REC-06.3 — Application + tests
+
+**Archivos:** `MateHR.Application/Recruitment/SearchReasons/`.
+**Tests (REC-06.3-T)** — espejo de REC-01.3-T.
+
+## Subtarea REC-06.4 — Api + tests
+
+**Archivo:** `SearchReasonsController.cs` — `/api/v1/recruitment/search-reasons`.
+**Tests (REC-06.4-T)** — espejo de REC-01.4-T.
+
+---
+
+# TAREA REC-07 · Estados de proceso de candidato (`CandidateProcessStatus`)
+
+**US:** Como admin de tenant quiero catalogar los estados de un proceso de selección (Postulado,
+En entrevista, Oferta, Contratado, Rechazado); el recruiter los usa y solo los ve.
+
+**Depende de:** REC-00
+
+## Subtarea REC-07.1 — Domain + tests
+
+**Archivo:** `CandidateProcessStatus.cs` — igual a `Area`, `NameMaxLength = 100`.
+**Tests (REC-07.1-T)** — `CandidateProcessStatusTests.cs`: mismos casos que `JobStatusTests`.
+
+## Subtarea REC-07.2 — Infrastructure + tests
+
+**Archivos:** `CandidateProcessStatusConfiguration.cs`, `CandidateProcessStatusRepository.cs`, `ICandidateProcessStatusRepository.cs`.
+**Tests (REC-07.2-T)** — `CandidateProcessStatusRepositoryTests.cs`: genéricos de catálogo.
+
+## Subtarea REC-07.3 — Application + tests
+
+**Archivos:** `MateHR.Application/Recruitment/CandidateProcessStatuses/`.
+**Tests (REC-07.3-T)** — espejo de REC-01.3-T.
+
+## Subtarea REC-07.4 — Api + tests
+
+**Archivo:** `CandidateProcessStatusesController.cs` — `/api/v1/recruitment/candidate-process-statuses`.
+**Tests (REC-07.4-T)** — espejo de REC-01.4-T.
+
+---
+
+# TAREA REC-08 · Job/empleo
+
+**US:** Como recruiter/admin quiero crear un job con sus datos, cliente, área/subárea, seniority,
+rango salarial, motivo, observaciones y pasos ordenados; y poder consultarlo, filtrarlo por estado,
+cambiar su estado/datos/notas, cerrarlo y gestionar su borrado (el recruiter solicita, el admin
+confirma).
+
+**Depende de:** REC-00 y los catálogos (REC-01…REC-07)
+
+## Subtarea REC-08.1 — Domain + tests
+
+**Archivos:** `MateHR.Domain/Recruitment/Entities/Job.cs`, `JobStep.cs`.
+
+**Código:**
+
+```csharp
+public class Job
+{
+    public const int NameMaxLength = 150;
+    public const int ClientNameMaxLength = 150;
+    public const int ObservationsMaxLength = 4000;
+
+    private readonly List<JobStep> _steps = new();
+    private Job() { }
+
+    public Job(
+        Guid tenantId, string name, SeniorityLevel seniority,
+        Guid areaId, Guid subAreaId,
+        int salaryMin, int salaryMax,
+        ClientType clientType, string clientName,
+        Guid jobStatusId, Guid searchReasonId, string? observations)
+    {
+        RecruitmentGuard.NotEmptyGuid(tenantId, nameof(tenantId));
+        RecruitmentGuard.ValidEnum(seniority);
+        RecruitmentGuard.NotEmptyGuid(areaId, nameof(areaId));
+        RecruitmentGuard.NotEmptyGuid(subAreaId, nameof(subAreaId));
+        RecruitmentGuard.NonNegative(salaryMin, nameof(salaryMin));
+        RecruitmentGuard.NonNegative(salaryMax, nameof(salaryMax));
+        if (salaryMax < salaryMin) throw new ArgumentException("El salario maximo no puede ser menor al minimo.", nameof(salaryMax));
+        RecruitmentGuard.ValidEnum(clientType);
+        RecruitmentGuard.NotEmptyGuid(jobStatusId, nameof(jobStatusId));
+        RecruitmentGuard.NotEmptyGuid(searchReasonId, nameof(searchReasonId));
+
+        Id = Guid.NewGuid();
+        TenantId = tenantId;
+        Name = RecruitmentGuard.RequiredName(name, NameMaxLength, nameof(name));
+        Seniority = seniority;
+        AreaId = areaId; SubAreaId = subAreaId;
+        SalaryMin = salaryMin; SalaryMax = salaryMax;
+        ClientType = clientType;
+        ClientName = RecruitmentGuard.RequiredName(clientName, ClientNameMaxLength, nameof(clientName));
+        JobStatusId = jobStatusId;
+        SearchReasonId = searchReasonId;
+        Observations = observations?.Trim();
+        IsActive = true;
+        OpenDate = DateTimeOffset.UtcNow;
+    }
+
+    public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; }
+    public string Name { get; private set; } = string.Empty;
+    public SeniorityLevel Seniority { get; private set; }
+    public Guid AreaId { get; private set; }
+    public Guid SubAreaId { get; private set; }
+    public int SalaryMin { get; private set; }
+    public int SalaryMax { get; private set; }
+    public ClientType ClientType { get; private set; }
+    public string ClientName { get; private set; } = string.Empty;
+    public IReadOnlyList<JobStep> Steps => _steps.AsReadOnly();
+    public bool IsActive { get; private set; }
+    public Guid JobStatusId { get; private set; }
+    public Guid SearchReasonId { get; private set; }
+    public DateTimeOffset OpenDate { get; private set; }
+    public DateTimeOffset? CloseDate { get; private set; }
+    public string? Observations { get; private set; }
+    public DateTimeOffset? DeletionRequestedAt { get; private set; }
+    public Guid? DeletionRequestedBy { get; private set; }
+    public DateTimeOffset? DeletionConfirmedAt { get; private set; }
+    public DateTimeOffset? UpdatedAt { get; private set; }
+
+    public void UpdateData(string name, SeniorityLevel seniority, Guid areaId, Guid subAreaId,
+        int salaryMin, int salaryMax, ClientType clientType, string clientName, Guid searchReasonId) { /* valida + asigna + UpdatedAt */ }
+    public void ChangeStatus(Guid jobStatusId) { /* valida + asigna + UpdatedAt */ }
+    public void UpdateObservations(string? observations) { /* max length + UpdatedAt */ }
+    public void SetSteps(IEnumerable<Guid> processStepIdsInOrder) { /* reemplaza _steps, orden 1..n, sin duplicados */ }
+    public void RequestDeletion(Guid userId, DateTimeOffset moment) { /* setea DeletionRequestedAt/By */ }
+    public void ConfirmDeletion(DateTimeOffset moment) { /* soft delete: IsActive=false, DeletionConfirmedAt */ }
+    public void Close(DateTimeOffset moment) { /* CloseDate=moment, IsActive=false */ }
+}
+
+public class JobStep
+{
+    private JobStep() { }
+    public JobStep(Guid jobId, Guid processStepId, int order) { /* valida >0 y no vacíos */ }
+    public Guid Id { get; private set; }
+    public Guid JobId { get; private set; }
+    public Guid ProcessStepId { get; private set; }
+    public int Order { get; private set; }
+}
+```
+
+**Criterios de aceptación**
+- [ ] `salaryMax < salaryMin` → `ArgumentException`
+- [ ] `SetSteps` ordena 1..n, rechaza duplicados y permite lista vacía
+- [ ] `Close` setea `CloseDate` y baja `IsActive`; no se puede cerrar dos veces
+
+**Tests (REC-08.1-T)** — `Tests/Domain/Recruitment/Entities/JobTests.cs` y `JobStepTests.cs`:
+`Constructor_ValidData_SetsDefaults`, `Constructor_UndefinedSeniority_Throws…`, `Constructor_SalaryMaxLessThanMin_Throws…`,
+`Constructor_UndefinedClientType_Throws…`, `Constructor_WhitespaceName_Throws…`, `SetSteps_OrdersFromOneToN`,
+`SetSteps_DuplicateStep_Throws…`, `SetSteps_Empty_ClearsSteps`, `ChangeStatus_UpdatesStatus`,
+`UpdateObservations_TooLong_Throws…`, `RequestDeletion_SetsRequestFields`, `ConfirmDeletion_SoftDeletes`,
+`ConfirmDeletion_AlreadyInactive_ThrowsInvalidOperationException`, `Close_SetsCloseDateAndDeactivates`,
+`Close_AlreadyClosed_Throws…`.
+
+## Subtarea REC-08.2 — Infrastructure + tests
+
+**Archivos:** `MateHR.Infrastructure/Persistance/Configurations/Recruitment/JobConfiguration.cs`,
+`JobStepConfiguration.cs`, `JobRepository.cs`, `MateHR.Domain/Recruitment/Interfaces/IJobRepository.cs`.
+
+**Código:**
+
+```csharp
+// IJobRepository
+public interface IJobRepository
+{
+    Task<Job> GetByIdAsync(Guid tenantId, Guid id, CancellationToken ct = default);   // incluye Steps
+    Task<PagedResult<Job>> GetAllAsync(Guid tenantId, Guid? jobStatusId, bool? isActive, int pageNumber, int pageSize, CancellationToken ct = default);
+    Task<bool> NameExistsAsync(Guid tenantId, string name, Guid? excludeId, CancellationToken ct = default);
+    Task<Job> CreateAsync(Job job, CancellationToken ct = default);
+    Task<Job> UpdateAsync(Job job, CancellationToken ct = default);
+    Task<Job> ChangeStatusAsync(Guid tenantId, Guid id, Guid jobStatusId, CancellationToken ct = default);
+    Task<Job> UpdateObservationsAsync(Guid tenantId, Guid id, string? observations, CancellationToken ct = default);
+    Task<Job> SetStepsAsync(Guid tenantId, Guid id, IReadOnlyList<Guid> processStepIdsInOrder, CancellationToken ct = default);
+    Task<Job> RequestDeletionAsync(Guid tenantId, Guid id, Guid requestedBy, CancellationToken ct = default);
+    Task<Job> ConfirmDeletionAsync(Guid tenantId, Guid id, CancellationToken ct = default);
+    Task<Job> CloseAsync(Guid tenantId, Guid id, CancellationToken ct = default);
+    Task<bool> IsReferencedByProcessAsync(Guid tenantId, Guid jobId, CancellationToken ct = default);
+}
+```
+
+```csharp
+// JobConfiguration
+builder.HasMany(j => j.Steps).WithOne().HasForeignKey(s => s.JobId).OnDelete(DeleteBehavior.Cascade);
+builder.Navigation(j => j.Steps).UsePropertyAccessMode(PropertyAccessMode.Field);
+builder.Property(j => j.Seniority).HasConversion<int>().IsRequired();
+builder.Property(j => j.ClientType).HasConversion<int>().IsRequired();
+builder.HasIndex(j => new { j.TenantId, j.Name });
+```
+
+```csharp
+// JobRepository (puntos finos)
+public async Task<Job> GetByIdAsync(Guid tenantId, Guid id, CancellationToken ct = default)
+{
+    var job = await _context.Jobs.Include(j => j.Steps)
+        .FirstOrDefaultAsync(j => j.Id == id && j.TenantId == tenantId, ct);
+    if (job is null) throw new KeyNotFoundException($"No se encontro el job con ID {id}");
+    return job;
+}
+
+public async Task<Job> SetStepsAsync(Guid tenantId, Guid id, IReadOnlyList<Guid> processStepIdsInOrder, CancellationToken ct = default)
+{
+    var job = await GetByIdAsync(tenantId, id, ct);
+    job.SetSteps(processStepIdsInOrder);   // la entidad arma JobStep con Order 1..n
+    await _context.SaveChangesAsync(ct);
+    return job;
+}
+```
+
+**Tests (REC-08.2-T)** — `Tests/Infrastructure/Recruitment/Repositories/JobRepositoryTests.cs`:
+búsqueda por id / desconocido / otro tenant, `GetAllAsync` filtra por `jobStatusId` y `isActive` y ordena por `OpenDate` desc,
+`CreateAsync` persiste con Steps, `SetStepsAsync` ordena 1..n, `ChangeStatusAsync` cambia estado y estampa `UpdatedAt`,
+`RequestDeletionAsync` no borra, `ConfirmDeletionAsync` deja `IsActive=false`, `CloseAsync` setea `CloseDate`.
+
+## Subtarea REC-08.3 — Application + tests
+
+**Archivos:** `MateHR.Application/Recruitment/Jobs/`
+(`Commands/`: `CreateJob`, `UpdateJob`, `ChangeJobStatus`, `UpdateJobObservations`, `SetJobSteps`,
+`RequestJobDeletion`, `ConfirmJobDeletion`, `CloseJob`; `Queries/`: `GetJobById`, `GetJobs`;
+`DTOs/`; `Validators/`; `Interfaces/`; `Mappings/JobMapping.cs`).
+
+**Código:**
+
+```csharp
+public class CreateJobDto
+{
+    public string Name { get; set; } = string.Empty;
+    public SeniorityLevel? Seniority { get; set; }
+    public Guid AreaId { get; set; }
+    public Guid SubAreaId { get; set; }
+    public int SalaryMin { get; set; }
+    public int SalaryMax { get; set; }
+    public ClientType? ClientType { get; set; }
+    public string ClientName { get; set; } = string.Empty;
+    public Guid JobStatusId { get; set; }
+    public Guid SearchReasonId { get; set; }
+    public string? Observations { get; set; }
+    public List<Guid> ProcessStepIds { get; set; } = new();
+}
+
+public class GetJobsRequest
+{
+    public Guid? JobStatusId { get; set; }
+    public bool? IsActive { get; set; }
+    public int PageNumber { get; set; } = 1;
+    public int PageSize { get; set; } = 20;
+}
+```
+
+**Reglas:** validar DTO → tenant → `AreaId` y `SubAreaId` existen y la subárea pertenece al área
+(si no → `ValidationException`/`KeyNotFoundException`) → nombre duplicado en el tenant →
+`Job` con `OpenDate=now`, `IsActive=true` → `SetSteps` con los ids ordenados.
+`ConfirmJobDeletion` valida que exista request previa (si no → `InvalidOperationException`).
+
+**Tests (REC-08.3-T)** — `Tests/Application/Recruitment/Jobs/*Tests.cs`:
+`CreateJobTests`: happy path con `Verify` (seniority, salarios, steps ordenados), subárea de otra área → `ValidationException`,
+área/subárea inexistente → `KeyNotFoundException`, nombre duplicado → `DuplicateEntityNameException`,
+`SalaryMax < SalaryMin` → `ValidationException`, tenant nulo → `UnauthorizedAccessException`.
+`GetJobsTests`: happy path `PagedResult` mapeado, `Verify` de `(jobStatusId, isActive, pageNumber, pageSize)`,
+`PageSize=101` → `ValidationException`, `GetJobById` desconocido → `KeyNotFoundException`.
+`UpdateJobTests` / `ChangeJobStatusTests` / `UpdateJobObservationsTests` / `SetJobStepsTests`:
+happy path + `Verify`, estado inexistente → `KeyNotFoundException`, enum inválido → `ValidationException`,
+job de otro tenant → `KeyNotFoundException`, `SetJobSteps` con duplicados → `ValidationException`.
+`RequestJobDeletionTests` / `ConfirmJobDeletionTests`: request setea campos, confirm sin request →
+`InvalidOperationException`, confirm soft-delete, `Verify` con `tenantId` correcto.
+`CloseJobTests`: `CloseDate` seteado + `IsActive=false`, job ya cerrado → `InvalidOperationException`.
+
+## Subtarea REC-08.4 — Api + tests
+
+**Archivo:** `MateHR.Api/Controllers/v1/Recruitment/JobsController.cs`.
+
+| Método | Ruta | Policy |
+|---|---|---|
+| POST | `/api/v1/recruitment/jobs` | RequireRecruiter |
+| GET | `/api/v1/recruitment/jobs?jobStatusId=&isActive=&pageNumber=&pageSize=` | RequireRecruiter |
+| GET | `/api/v1/recruitment/jobs/{id}` | RequireRecruiter |
+| PUT | `/api/v1/recruitment/jobs/{id}` | RequireRecruiter |
+| PATCH | `/api/v1/recruitment/jobs/{id}/status` | RequireRecruiter |
+| PATCH | `/api/v1/recruitment/jobs/{id}/observations` | RequireRecruiter |
+| PUT | `/api/v1/recruitment/jobs/{id}/steps` | RequireTenantAdmin |
+| POST | `/api/v1/recruitment/jobs/{id}/deletion-request` | RequireRecruiter |
+| POST | `/api/v1/recruitment/jobs/{id}/deletion-confirm` | RequireTenantAdmin |
+| POST | `/api/v1/recruitment/jobs/{id}/close` | RequireRecruiter |
+
+**Tests (REC-08.4-T)** — `Tests/Api/Recruitment/JobsControllerTests.cs`:
+`Create_WithRecruiterToken_Returns201WithLocation`, `GetAll_FilterByStatus_ReturnsOnlyMatching`,
+`UpdateStatus_Returns200WithNewStatus`, `RequestDeletion_AsRecruiter_Returns200`,
+`ConfirmDeletion_AsRecruiter_Returns403`, `ConfirmDeletion_AsAdmin_Returns200`,
+`Close_Returns200WithCloseDate`, `Endpoints_WithoutToken_Returns401`.
+
+---
+
+# TAREA REC-09 · Candidatos
+
+**US:** Como recruiter/admin quiero crear, editar, listar/ver y eliminar candidatos (datos
+personales, contacto, ubicación, comentarios) viendo el historial de procesos en los que participó.
+
+**Depende de:** REC-00, REC-10 (para el historial)
+
+## Subtarea REC-09.1 — Domain + tests
+
+**Archivo:** `MateHR.Domain/Recruitment/Entities/Candidate.cs`.
+
+**Código:**
+
+```csharp
+public class Candidate
+{
+    public const int FirstNameMaxLength = 100;
+    public const int LastNameMaxLength = 100;
+    public const int EmailMaxLength = 320;
+    public const int PhoneMaxLength = 30;
+    public const int LinkedInMaxLength = 300;
+    public const int LocationMaxLength = 100;
+    public const int CommentsMaxLength = 4000;
+
+    private Candidate() { }
+
+    public Candidate(Guid tenantId, string firstName, string lastName, int dni, string phone,
+        string email, string? linkedInUrl, Province province, Country country, string? location,
+        string? comments, bool isExternallyCreated)
+    {
+        RecruitmentGuard.NotEmptyGuid(tenantId, nameof(tenantId));
+        if (dni <= 0) throw new ArgumentException("El DNI debe ser mayor a cero.", nameof(dni));
+        RecruitmentGuard.ValidEnum(province);
+        RecruitmentGuard.ValidEnum(country);
+        // email normalizado con MailAddress.TryCreate (igual que User/Tenant)
+        Id = Guid.NewGuid();
+        TenantId = tenantId;
+        // ...
+        CreationDate = DateTimeOffset.UtcNow;
+        LastActivity = CreationDate;
+        IsExternallyCreated = isExternallyCreated;
+    }
+
+    public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; }
+    public string FirstName { get; private set; } = string.Empty;
+    public string LastName { get; private set; } = string.Empty;
+    public int Dni { get; private set; }
+    public string Phone { get; private set; } = string.Empty;
+    public string Email { get; private set; } = string.Empty;
+    public string? LinkedInUrl { get; private set; }
+    public Province Province { get; private set; }
+    public Country Country { get; private set; }
+    public string Location { get; private set; } = string.Empty;
+    public string? Comments { get; private set; }
+    public DateTimeOffset CreationDate { get; private set; }
+    public DateTimeOffset LastActivity { get; private set; }
+    public bool IsExternallyCreated { get; private set; }
+
+    public void Update(...) { /* valida + asigna + RecordActivity(now) */ }
+    public void UpdateComments(string? comments) { /* max length + RecordActivity */ }
+    public void RecordActivity(DateTimeOffset moment) { /* LastActivity=moment; no anterior a CreationDate */ }
+}
+```
+
+> `ProcessHistory` **no** se persiste (DEC-REC-8): lo arma el query cruzando `SelectionProcess`.
+
+**Tests (REC-09.1-T)** — `Tests/Domain/Recruitment/Entities/CandidateTests.cs`:
+`Constructor_ValidData_SetsDefaults` (incluye `LastActivity == CreationDate`), `Constructor_NormalizesEmail`,
+`Constructor_InvalidEmail_Throws…`, `Constructor_DniZeroOrNegative_Throws…`,
+`Constructor_UndefinedProvince_Throws…`, `Constructor_UndefinedCountry_Throws…`,
+`Constructor_ExternallyCreated_SetsFlag`, `RecordActivity_UpdatesLastActivity`,
+`RecordActivity_BeforeCreationDate_Throws…`, `Update_ValidData_UpdatesAndTouchesActivity`,
+`UpdateComments_TooLong_Throws…`.
+
+## Subtarea REC-09.2 — Infrastructure + tests
+
+**Archivos:** `CandidateConfiguration.cs`, `CandidateRepository.cs`, `ICandidateRepository.cs`.
+
+**Código:**
+
+```csharp
+public interface ICandidateRepository
+{
+    Task<Candidate> GetByIdAsync(Guid tenantId, Guid id, CancellationToken ct = default);
+    Task<Candidate?> FindByEmailAsync(Guid tenantId, string email, CancellationToken ct = default);  // null permitido (apply externo)
+    Task<PagedResult<Candidate>> GetAllAsync(Guid tenantId, string? search, int pageNumber, int pageSize, CancellationToken ct = default);
+    Task<Candidate> CreateAsync(Candidate candidate, CancellationToken ct = default);
+    Task<Candidate> UpdateAsync(Candidate candidate, CancellationToken ct = default);
+    Task DeleteAsync(Guid tenantId, Guid id, CancellationToken ct = default);
+    Task<bool> HasProcessesAsync(Guid tenantId, Guid candidateId, CancellationToken ct = default);
+}
+```
+
+```csharp
+public async Task<Candidate?> FindByEmailAsync(Guid tenantId, string email, CancellationToken ct = default)
+{
+    var normalized = email.Trim().ToLowerInvariant();
+    return await _context.Candidates.AsNoTracking()
+        .FirstOrDefaultAsync(c => c.TenantId == tenantId && c.Email == normalized, ct);
+}
+```
+
+**Tests (REC-09.2-T)** — `Tests/Infrastructure/Recruitment/Repositories/CandidateRepositoryTests.cs`:
+`FindByEmailAsync_ExistingEmail_ReturnsCandidate`, `FindByEmailAsync_MixedCase_FindsCandidate`,
+`FindByEmailAsync_Unknown_ReturnsNull`, `FindByEmailAsync_OtherTenant_ReturnsNull`,
+`GetAllAsync_SearchByNameOrEmail_Filters`, `GetAllAsync_OrdersByLastActivityDesc`,
+`HasProcessesAsync_WithProcess_ReturnsTrue`, `CreateAsync_Persists`.
+
+## Subtarea REC-09.3 — Application + tests
+
+**Archivos:** `MateHR.Application/Recruitment/Candidates/`
+(`Commands/CreateCandidate`, `UpdateCandidate`, `DeleteCandidate`; `Queries/GetCandidateById`, `GetCandidates`).
+
+**Reglas:** email duplicado en el tenant → `DuplicateEntityNameException` (o `EmailAlreadyExistsException`
+reutilizada); delete bloqueado si tiene procesos (`HasProcessesAsync` → `EntityInUseException`);
+`GetCandidateById` arma `ProcessHistory` con `ISelectionProcessRepository.GetByCandidateAsync`.
+
+**Código:**
+
+```csharp
+public class CandidateResponse
+{
+    public Guid Id { get; set; }
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Phone { get; set; } = string.Empty;
+    public int Dni { get; set; }
+    public Province Province { get; set; }
+    public Country Country { get; set; }
+    public string Location { get; set; } = string.Empty;
+    public bool IsExternallyCreated { get; set; }
+    public DateTimeOffset CreationDate { get; set; }
+    public DateTimeOffset LastActivity { get; set; }
+    public List<SelectionProcessSummaryResponse> ProcessHistory { get; set; } = new();
+}
+```
+
+**Tests (REC-09.3-T)** — `Tests/Application/Recruitment/Candidates/*Tests.cs`:
+happy path con `Verify`, email duplicado, delete con procesos → `EntityInUseException`,
+`GetCandidateById` con `ProcessHistory` mapeado (cross-repo verificado), listado con `search`,
+`GetCandidates` forwards paging.
+
+## Subtarea REC-09.4 — Api + tests
+
+**Archivo:** `CandidatesController.cs` — `/api/v1/recruitment/candidates`
+(`GET` y `GET/{id}` con `RequireRecruiter`; `POST`/`PUT`/`DELETE` con `RequireRecruiter`).
+
+**Tests (REC-09.4-T)** — `Tests/Api/Recruitment/CandidatesControllerTests.cs`:
+`Create_DuplicateEmail_Returns409`, `Delete_WithProcesses_Returns409`,
+`GetById_Returns200WithProcessHistory`, `GetAll_WithSearch_Returns200`, 401/403.
+
+---
+
+# TAREA REC-10 · Procesos de selección (`SelectionProcess`)
+
+**US:** Como recruiter/admin quiero registrar que un candidato participa de un job, con su estado,
+observación y última actualización, y poder listarlos/verlos/eliminarlos.
+
+**Depende de:** REC-00, REC-02..REC-07, REC-08, REC-09
+
+## Subtarea REC-10.1 — Domain + tests
+
+**Archivo:** `MateHR.Domain/Recruitment/Entities/SelectionProcess.cs`.
+
+**Código:**
+
+```csharp
+public class SelectionProcess
+{
+    public const int ObservationMaxLength = 4000;
+    private SelectionProcess() { }
+
+    public SelectionProcess(Guid tenantId, Guid jobId, Guid candidateId, Guid statusId, string? observation)
+    {
+        RecruitmentGuard.NotEmptyGuid(tenantId, nameof(tenantId));
+        RecruitmentGuard.NotEmptyGuid(jobId, nameof(jobId));
+        RecruitmentGuard.NotEmptyGuid(candidateId, nameof(candidateId));
+        RecruitmentGuard.NotEmptyGuid(statusId, nameof(statusId));
+        // ...
+        LastUpdate = DateTimeOffset.UtcNow;
+    }
+
+    public Guid Id { get; private set; }
+    public Guid TenantId { get; private set; }
+    public Guid JobId { get; private set; }
+    public Guid CandidateId { get; private set; }
+    public Guid StatusId { get; private set; }
+    public string? Observation { get; private set; }
+    public DateTimeOffset LastUpdate { get; private set; }
+
+    public void ChangeStatus(Guid statusId, DateTimeOffset moment) { /* valida + LastUpdate */ }
+    public void UpdateObservation(string? observation, DateTimeOffset moment) { /* max length + LastUpdate */ }
+}
+```
+
+**Tests (REC-10.1-T)** — `Tests/Domain/Recruitment/Entities/SelectionProcessTests.cs`:
+`Constructor_ValidData_SetsDefaults`, `Constructor_EmptyJob_Throws…`, `Constructor_EmptyCandidate_Throws…`,
+`Constructor_EmptyStatus_Throws…`, `ChangeStatus_UpdatesStatusAndLastUpdate`,
+`UpdateObservation_UpdatesObservationAndLastUpdate`, `UpdateObservation_TooLong_Throws…`.
+
+## Subtarea REC-10.2 — Infrastructure + tests
+
+**Archivos:** `SelectionProcessConfiguration.cs`, `SelectionProcessRepository.cs`, `ISelectionProcessRepository.cs`.
+
+**Código:**
+
+```csharp
+public interface ISelectionProcessRepository
+{
+    Task<SelectionProcess> GetByIdAsync(Guid tenantId, Guid id, CancellationToken ct = default);
+    Task<PagedResult<SelectionProcess>> GetAllAsync(Guid tenantId, Guid? jobId, Guid? candidateId, int pageNumber, int pageSize, CancellationToken ct = default);
+    Task<IReadOnlyList<SelectionProcess>> GetByCandidateAsync(Guid tenantId, Guid candidateId, CancellationToken ct = default); // ProcessHistory
+    Task<SelectionProcess> CreateAsync(SelectionProcess process, CancellationToken ct = default);
+    Task<SelectionProcess> UpdateAsync(SelectionProcess process, CancellationToken ct = default);
+    Task DeleteAsync(Guid tenantId, Guid id, CancellationToken ct = default);
+}
+```
+
+**Tests (REC-10.2-T)** — `Tests/Infrastructure/Recruitment/Repositories/SelectionProcessRepositoryTests.cs`:
+`GetByCandidateAsync_ReturnsOnlyCandidatesProcessesOrderedByLastUpdate`,
+`GetAllAsync_FiltersByJobAndCandidate`, `CreateAsync_Persists`, `UpdateAsync_StampsLastUpdate`,
+`GetByIdAsync_OtherTenant_ThrowsKeyNotFoundException`.
+
+## Subtarea REC-10.3 — Application + tests
+
+**Archivos:** `MateHR.Application/Recruitment/SelectionProcesses/`
+(`Commands/CreateSelectionProcess`, `UpdateSelectionProcess` (estado + observación), `DeleteSelectionProcess`;
+`Queries/GetSelectionProcessById`, `GetSelectionProcesses`).
+
+**Reglas:** job y candidato deben existir en el tenant; el `StatusId` debe existir; al actualizar,
+`ChangeStatus`/`UpdateObservation` tocan `LastUpdate`.
+
+**Tests (REC-10.3-T)** — `Tests/Application/Recruitment/SelectionProcesses/*Tests.cs`:
+happy path, job/candidato/estado inexistentes → `KeyNotFoundException`, enum inexistente → `ValidationException`,
+`Update` setea `LastUpdate`, listado filtrando por `jobId` y por `candidateId`.
+
+## Subtarea REC-10.4 — Api + tests
+
+**Archivo:** `SelectionProcessesController.cs` — `/api/v1/recruitment/selection-processes`
+(`GET ?jobId=&candidateId=`). Todas las rutas `RequireRecruiter`.
+
+**Tests (REC-10.4-T)** — `Tests/Api/Recruitment/SelectionProcessesControllerTests.cs`:
+`Create_UnknownJob_Returns404`, `Create_Returns201`, `Update_Returns200WithLastUpdate`,
+`GetAll_FiltersByJobAndCandidate`, 401/403.
+
+---
+
+# TAREA REC-11 · Portal externo (apply) + notificación/email
+
+**US:** Como persona externa quiero ver los jobs activos y postularme sin autenticarme; el sistema
+avisa al tenant para revisarlo y crea el candidato si no existe, marcándolo como externo.
+
+**Depende de:** REC-00, REC-08, REC-09, REC-10
+
+## Subtarea REC-11.1 — Domain + tests
+
+**Archivos:** reutiliza `Candidate` (REC-09.1) y `SelectionProcess` (REC-10.1).
+No agrega entidades nuevas; valida la regla "candidato externo".
+
+**Criterios de aceptación**
+- [ ] El flag `IsExternallyCreated` es el que distingue el alta por portal
+- [ ] No hay reglas de dominio nuevas que no cubran REC-09.1/REC-10.1
+
+**Tests (REC-11.1-T):** cubierto por `CandidateTests.Constructor_ExternallyCreated_SetsFlag`.
+
+## Subtarea REC-11.2 — Infrastructure + tests
+
+**Archivos:** `MateHR.Application/Recruitment/Interfaces/IEmailService.cs`,
+`MateHR.Infrastructure/Services/SmtpEmailService.cs` (o `NoOpEmailService` en dev),
+`MateHR.Infrastructure/Settings/EmailSettings.cs`, registro en `Infrastructure/DependencyInjection.cs`.
+
+**Código:**
+
+```csharp
+public interface IEmailService
+{
+    Task SendAsync(string to, string subject, string body, CancellationToken ct = default);
+}
+```
+
+**Criterios de aceptación**
+- [ ] Si `EmailSettings` no está configurado, el `NoOp` no rompe el apply
+- [ ] Registro por DI intercambiable (SMTP real vs NoOp)
+
+**Tests (REC-11.2-T):** se testea con un mock de `IEmailService` en Application; el SMTP real queda
+como validación manual. Aceptación: el `NoOp` implementa el contrato sin efectos.
+
+## Subtarea REC-11.3 — Application + tests
+
+**Archivos:** `MateHR.Application/Recruitment/Public/`
+(`Commands/ApplyToJob.cs`, `Queries/GetPublicJobs.cs`, `GetPublicJobById.cs`; `DTOs/`; `Validators/`).
+`IApplyToJob` en `Interfaces/`.
+
+**Reglas:** el job debe existir, ser del tenant y estar activo (si no → 404 / `ValidationException`);
+buscar candidato por email:
+- no existe → `CreateCandidate(isExternallyCreated: true)` + crear `SelectionProcess` en estado inicial;
+- existe → `RecordActivity(now)` + crear `SelectionProcess` (si ya existe el mismo job+candidato → 409);
+- disparar `IEmailService.SendAsync` (a `EmailSettings.RecruitmentInbox`).
+
+**Código:**
+
+```csharp
+public interface IApplyToJob { Task<ApplyResponse> ExecuteAsync(Guid jobId, ApplyToJobDto dto, CancellationToken ct = default); }
+
+public class ApplyToJobDto
+{
+    public Guid JobId { get; set; }
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public int Dni { get; set; }
+    public string Phone { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string? LinkedInUrl { get; set; }
+    public Province? Province { get; set; }
+    public Country? Country { get; set; }
+    public string? Location { get; set; }
+    public string? Comments { get; set; }
+}
+```
+
+> El tenant del apply se resuelve por el job (endpoint anónimo: no hay `ITenantContext`). El use case
+> busca el job por id global y toma su `TenantId`. Documentar la opción elegida en el test.
+
+**Tests (REC-11.3-T)** — `Tests/Application/Recruitment/Public/ApplyToJobTests.cs`:
+candidato nuevo → se crea con `IsExternallyCreated=true` + proceso + email enviado (`Verify`);
+candidato existente → `RecordActivity` + NO se duplica el candidato;
+postulación repetida al mismo job → `DuplicateEntityNameException`/409;
+job inactivo o de otro tenant → `KeyNotFoundException`; email inválido → `ValidationException`.
+
+## Subtarea REC-11.4 — Api + tests
+
+**Archivos:** `MateHR.Api/Controllers/v1/Public/PublicJobsController.cs`.
+
+**Código:**
+
+```csharp
+[ApiController]
+[Route("api/v1/public/jobs")]
+[AllowAnonymous]
+public class PublicJobsController : ControllerBase
+{
+    [HttpGet]                        // lista jobs activos (sin datos sensibles)
+    [HttpGet("{id:guid}")]
+    [HttpPost("{id:guid}/apply")]    // -> IApplyToJob
+}
+```
+
+**Notas:** CORS ya permite orígenes del front. Rate-limit queda como deuda técnica anotada.
+
+**Tests (REC-11.4-T)** — `Tests/Api/Recruitment/PublicJobsControllerTests.cs`:
+`GetActiveJobs_Anonymous_Returns200WithOnlyActive`,
+`Apply_NewCandidate_Returns201AndTaggedExternally`,
+`Apply_ExistingCandidate_Returns200AndNoDuplicate`,
+`Apply_InactiveJob_Returns404`, `Apply_InvalidBody_Returns400`.
+
+---
+
+# Orden de ejecución sugerido
+
+Se hace **cada tarea completa en vertical** (`REC-xx.1 → .4`) antes de pasar a la siguiente:
+
+```text
+REC-00  Fundamentos
+REC-01  JobStatus
+REC-02  Area
+REC-03  SubArea
+REC-04  Client
+REC-05  ProcessStep
+REC-06  SearchReason
+REC-07  CandidateProcessStatus
+REC-08  Job
+REC-09  Candidate
+REC-10  SelectionProcess
+REC-11  Portal externo (apply) + email
+```
+
+**Definition of Done por subtarea:** código mergeado, tests de esa capa en verde (`dotnet test`),
+`AssertConfigurationIsValid` pasa cuando corresponda, sin warnings nuevos, y el ticket incluye los
+casos de test listados.
+
+## Plantilla para próximos módulos
+
+Al repetir para Employees/Vacations/etc.: copiar el esquema de **una tarea = una cosa con 4
+subtareas (Domain/Infra/App/Api)**, listar cada entidad con sus enums y su tabla de rutas/policies,
+y mantener el "Definition of Done". Los catálogos se clonan casi 1:1; lo específico de cada módulo
+va en la subtarea Application (reglas de negocio) y en la Api (rutas).
