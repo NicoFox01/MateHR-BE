@@ -2,6 +2,7 @@
 using FluentValidation;
 using MateHR.Application.Tenants;
 using MateHR.Application.Users;
+using MateHR.Application.Recruitment;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Reflection;
@@ -26,6 +27,7 @@ namespace MateHR.Application
 
             services.AddTenants();
             services.AddUsers();
+            services.AddRecruitment();
 
             return services;
         }

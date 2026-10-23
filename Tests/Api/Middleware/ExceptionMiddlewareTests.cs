@@ -1,12 +1,12 @@
-using System.Text.Json;
 using FluentAssertions;
 using FluentValidation;
 using FluentValidation.Results;
 using MateHR.Api.Middleware;
 using MateHR.Domain.Exceptions;
+using MateHR.Domain.Recruitment.Exceptions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
-using Xunit;
+using System.Text.Json;
 
 namespace MateHR.Api.Tests.Middleware
 {
@@ -107,5 +107,31 @@ namespace MateHR.Api.Tests.Middleware
             result.StatusCode.Should().Be(StatusCodes.Status502BadGateway);
             result.Body.GetProperty("message").GetString().Should().Be("No se pudo comunicar con un servicio externo.");
         }
+        [Fact]
+        public async Task InvokeAsync_EntityInUseException_Returns409()
+        {
+            var result = await InvokeAsync(new EntityInUseException("Area", Guid.NewGuid()));
+
+            result.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        }
+        [Fact]
+        public async Task InvokeAsync_DuplicateEntityNameException_Returns409()
+        {
+            var result = await InvokeAsync(new DuplicateEntityNameException("Area"));
+            result.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        }
+        [Fact]
+        public async Task InvokeAsync_JobAlreadyClosedException_Returns409()
+        {
+            var result = await InvokeAsync(new JobAlreadyClosedException(Guid.NewGuid()));
+            result.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        }
+        [Fact]
+        public async Task InvokeAsync_UnauthorizedAccessException_Returns403()
+        {
+            var result = await InvokeAsync(new UnauthorizedAccessException("No iene permisos apra realizar esta acción."));
+            result.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        }
+
     }
 }

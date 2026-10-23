@@ -1,7 +1,8 @@
-﻿using System.Diagnostics;
-using AutoMapper;
-using MateHR.Domain.Exceptions;
+﻿using AutoMapper;
 using FluentValidation;
+using MateHR.Domain.Exceptions;
+using MateHR.Domain.Recruitment.Exceptions;
+using System.Diagnostics;
 
 namespace MateHR.Api.Middleware
 {
@@ -58,9 +59,13 @@ namespace MateHR.Api.Middleware
 
             var (statusCode, message) = effective switch
             {
+                UnauthorizedAccessException =>(StatusCodes.Status403Forbidden, effective.Message),
                 KeyNotFoundException => (StatusCodes.Status404NotFound, effective.Message),
                 SlugAlreadyExistsException => (StatusCodes.Status409Conflict, effective.Message),
                 EmailAlreadyExistsException => (StatusCodes.Status409Conflict, effective.Message),
+                EntityInUseException => (StatusCodes.Status409Conflict, effective.Message),
+                DuplicateEntityNameException => (StatusCodes.Status409Conflict, effective.Message),
+                JobAlreadyClosedException => (StatusCodes.Status409Conflict, effective.Message),
                 InvalidCredentialsException => (StatusCodes.Status401Unauthorized, effective.Message),
                 ArgumentException => (StatusCodes.Status400BadRequest, effective.Message),
                 HttpRequestException => (StatusCodes.Status502BadGateway, "No se pudo comunicar con un servicio externo."),

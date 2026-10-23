@@ -1,16 +1,15 @@
-using System.Text;
-using System.Text.Json.Serialization;
 using MateHR.Api.Authorization;
 using MateHR.Api.Extensions;
 using MateHR.Api.Middleware;
 using MateHR.Api.Seeding;
+using MateHR.Application;
 using MateHR.Domain.Common;
 using MateHR.Infrastructure;
 using MateHR.Infrastructure.Settings;
-using MateHR.Application;
-using MateHR.Application.Users;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -60,9 +59,12 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(AuthPolicies.RequireSuperAdmin, policy =>
         policy.RequireRole(AuthPolicies.SuperAdminRole));
-
     options.AddPolicy(AuthPolicies.RequireAdmin, policy =>
         policy.RequireRole(AuthPolicies.SuperAdminRole, AuthPolicies.AdminRole));
+    options.AddPolicy(AuthPolicies.RequireTenantAdmin, policy =>
+        policy.RequireRole(AuthPolicies.AdminRole));
+    options.AddPolicy(AuthPolicies.RequireRecruiter, policy =>
+        policy.RequireRole(AuthPolicies.AdminRole, AuthPolicies.RecruiterRole));
 });
 
 builder.Services.AddCors(options =>
