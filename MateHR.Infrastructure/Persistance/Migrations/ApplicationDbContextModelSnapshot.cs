@@ -22,6 +22,26 @@ namespace MateHR.Infrastructure.Persistance.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("MateHR.Domain.Recruitment.Entities.JobStatus", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Name");
+
+                    b.ToTable("JobStatuses", (string)null);
+                });
+
             modelBuilder.Entity("MateHR.Domain.Tenants.Entities.Tenant", b =>
                 {
                     b.Property<Guid>("Id")
