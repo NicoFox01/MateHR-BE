@@ -1,5 +1,4 @@
 using MateHR.Application.Users.Interfaces;
-using MateHR.Domain.Users.Interfaces;
 using MateHR.Infrastructure.Persistance;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;

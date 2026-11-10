@@ -11,8 +11,8 @@ namespace MateHR.Application.Tenants.Validators
             RuleFor(x => x.Street).MaximumLength(Address.StreetMaxLength);
             RuleFor(x => x.City).MaximumLength(Address.CityMaxLength);
             RuleFor(x => x.State).MaximumLength(Address.StateMaxLength);
-            RuleFor(x=> x.Country).MaximumLength(Address.CountryMaxLength);
-            RuleFor(x=>x.PostalCode).MaximumLength(Address.PostalCodeMaxLength);
+            RuleFor(x => x.Country).MaximumLength(Address.CountryMaxLength);
+            RuleFor(x => x.PostalCode).MaximumLength(Address.PostalCodeMaxLength);
         }
     }
 }

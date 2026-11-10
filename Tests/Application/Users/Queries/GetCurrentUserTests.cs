@@ -5,7 +5,6 @@ using MateHR.Domain.Users.Entities;
 using MateHR.Domain.Users.Enums;
 using MateHR.Domain.Users.Interfaces;
 using Moq;
-using Xunit;
 
 namespace MateHR.Application.Tests.Users.Queries
 {

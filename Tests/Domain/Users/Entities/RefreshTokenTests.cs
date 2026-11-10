@@ -1,6 +1,5 @@
 using FluentAssertions;
 using MateHR.Domain.Users.Entities;
-using Xunit;
 
 namespace MateHR.Domain.Tests.Users.Entities
 {

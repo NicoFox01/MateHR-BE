@@ -2,7 +2,6 @@
 using MateHR.Domain.Tenants.Enums;
 using MateHR.Domain.Tenants.ValueObjects;
 using System.Net.Mail;
-using System.Text;
 
 namespace MateHR.Domain.Tenants.Entities
 {
@@ -12,8 +11,8 @@ namespace MateHR.Domain.Tenants.Entities
         public const int SlugMaxLength = 100;
         public const int CuitMaxLength = 11;
         public const int OwnerEmailMaxLength = 320;
-        private Tenant() 
-        { 
+        private Tenant()
+        {
         }
         public Tenant(
             string name,

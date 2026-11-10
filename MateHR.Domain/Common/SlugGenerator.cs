@@ -12,7 +12,7 @@ namespace MateHR.Domain.Common
             }
             var normalized = name.ToLowerInvariant().Replace(' ', '-');
             var builder = new StringBuilder(normalized.Length);
-            foreach(var ch in normalized)
+            foreach (var ch in normalized)
             {
                 if (char.IsAsciiLetterOrDigit(ch) || ch == '-')
                 {

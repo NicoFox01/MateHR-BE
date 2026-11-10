@@ -7,7 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Folder Include="Recruitment\Entities\" />
+    <Folder Include="modelo_base\Aggregates\" />
+    <Folder Include="modelo_base\DomainEvents\" />
+    <Folder Include="modelo_base\Entities\" />
+    <Folder Include="modelo_base\Enums\" />
+    <Folder Include="modelo_base\Exceptions\" />
+    <Folder Include="modelo_base\Interfaces\" />
+    <Folder Include="modelo_base\ValueObjects\" />
     <Folder Include="Recruitment\Aggregates\" />
     <Folder Include="Recruitment\DomainEvents\" />
     <Folder Include="Recruitment\ValueObjects\" />

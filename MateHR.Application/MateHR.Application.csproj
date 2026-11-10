@@ -12,6 +12,12 @@
 
   <ItemGroup>
     <Folder Include="Common\" />
+    <Folder Include="modelo_base\Commands\" />
+    <Folder Include="modelo_base\DTOs\" />
+    <Folder Include="modelo_base\Interfaces\" />
+    <Folder Include="modelo_base\Mappings\" />
+    <Folder Include="modelo_base\Queries\" />
+    <Folder Include="modelo_base\Validators\" />
     <Folder Include="Recruitment\Commands\" />
     <Folder Include="Recruitment\DTOs\" />
     <Folder Include="Recruitment\Interfaces\" />

@@ -1,6 +1,5 @@
 using FluentAssertions;
 using MateHR.Infrastructure.Services;
-using Xunit;
 
 namespace MateHR.Infrastructure.Tests.Services
 {

@@ -2,7 +2,6 @@ using FluentAssertions;
 using MateHR.Application.Users.DTOs;
 using MateHR.Application.Users.Validators;
 using MateHR.Domain.Users.Enums;
-using Xunit;
 
 namespace MateHR.Application.Tests.Users.Validators
 {

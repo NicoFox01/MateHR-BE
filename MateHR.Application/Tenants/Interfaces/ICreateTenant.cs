@@ -4,6 +4,6 @@ namespace MateHR.Application.Tenants.Interfaces
 {
     public interface ICreateTenant
     {
-        Task <TenantResponse> ExecuteAsync(CreateTenantDto createTenantDto, CancellationToken cancellationToken = default);
+        Task<TenantResponse> ExecuteAsync(CreateTenantDto createTenantDto, CancellationToken cancellationToken = default);
     }
 }

@@ -3,7 +3,7 @@ using MateHR.Application.Tenants.DTOs;
 
 namespace MateHR.Application.Tenants.Validators
 {
-    public class ChangeRecruitmentModeDtoValidator:AbstractValidator<ChangeRecruitmentModeDto>
+    public class ChangeRecruitmentModeDtoValidator : AbstractValidator<ChangeRecruitmentModeDto>
     {
         public ChangeRecruitmentModeDtoValidator()
         {

@@ -1,9 +1,8 @@
-using System.Text.RegularExpressions;
 using FluentAssertions;
 using MateHR.Infrastructure.Authentication;
 using MateHR.Infrastructure.Settings;
 using Microsoft.Extensions.Options;
-using Xunit;
+using System.Text.RegularExpressions;
 
 namespace MateHR.Infrastructure.Tests.Authentication
 {

@@ -1,7 +1,7 @@
-using System.Security.Cryptography;
 using MateHR.Application.Users.Interfaces;
 using MateHR.Domain.Exceptions;
 using MateHR.Domain.Users.Enums;
+using System.Security.Cryptography;
 
 namespace MateHR.Api.Seeding
 {

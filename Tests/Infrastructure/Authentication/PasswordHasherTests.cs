@@ -1,6 +1,5 @@
 using FluentAssertions;
 using MateHR.Infrastructure.Authentication;
-using Xunit;
 
 namespace MateHR.Infrastructure.Tests.Authentication
 {

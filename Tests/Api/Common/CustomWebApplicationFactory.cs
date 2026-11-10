@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using MateHR.Application.Common.Interfaces;
 using MateHR.Domain.Common;
 using MateHR.Domain.Tenants.Entities;
@@ -12,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using System.Net.Http.Headers;
 
 namespace MateHR.Api.Tests.Common
 {
