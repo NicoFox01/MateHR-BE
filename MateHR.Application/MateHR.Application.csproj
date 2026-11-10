@@ -18,12 +18,12 @@
     <Folder Include="modelo_base\Mappings\" />
     <Folder Include="modelo_base\Queries\" />
     <Folder Include="modelo_base\Validators\" />
-    <Folder Include="Recruitment\Commands\" />
-    <Folder Include="Recruitment\DTOs\" />
-    <Folder Include="Recruitment\Interfaces\" />
-    <Folder Include="Recruitment\Mappings\" />
-    <Folder Include="Recruitment\Validators\" />
-    <Folder Include="Recruitment\Queries\" />
+    <Folder Include="Recruitment\sub_modelo_base\Commands\" />
+    <Folder Include="Recruitment\sub_modelo_base\DTOs\" />
+    <Folder Include="Recruitment\sub_modelo_base\Interfaces\" />
+    <Folder Include="Recruitment\sub_modelo_base\Mappings\" />
+    <Folder Include="Recruitment\sub_modelo_base\Queries\" />
+    <Folder Include="Recruitment\sub_modelo_base\Validators\" />
     <Folder Include="Tenants\Interfaces\" />
     <Folder Include="Tenants\Queries\" />
   </ItemGroup>

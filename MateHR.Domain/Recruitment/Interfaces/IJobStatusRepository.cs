@@ -12,6 +12,7 @@ namespace MateHR.Domain.Recruitment.Interfaces
         Task<JobStatus> CreateAsync(JobStatus entity, CancellationToken ct = default);
         Task<JobStatus> RenameAsync(Guid tenantId, Guid id, string name, CancellationToken ct = default);
         Task DeleteAsync(Guid tenantId, Guid id, CancellationToken ct = default);
+        Task<bool> IsInUseAsync(Guid tenantId, Guid id, CancellationToken ct = default);
 
     }
 }

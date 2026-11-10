@@ -106,6 +106,20 @@ namespace MateHR.Tests.Infrastructure.Recruitment.Repositories
         }
 
         [Fact]
+        public async Task NameExistsAsync_DifferentCaseAndSpaces_ReturnsTrue()
+        {
+            using var context = InMemoryDbContextFactory.Create();
+            var repository = new JobStatusRepository(context);
+            var tenantId = Guid.NewGuid();
+            await SeedAsync(context, CreateJobStatus(tenantId, "Abierto"));
+            context.ChangeTracker.Clear();
+
+            var result = await repository.NameExistsAsync(tenantId, "  abierto  ", excludeId: null);
+
+            result.Should().BeTrue();
+        }
+
+        [Fact]
         public async Task NameExistsAsync_ExcludingOwnId_ReturnsFalse()
         {
             using var context = InMemoryDbContextFactory.Create();
@@ -218,6 +232,26 @@ namespace MateHR.Tests.Infrastructure.Recruitment.Repositories
 
             await unknownIdAct.Should().ThrowAsync<KeyNotFoundException>();
             await otherTenantAct.Should().ThrowAsync<KeyNotFoundException>();
+        }
+
+        // 13) IsInUseAsync_NoJobsYet_ReturnsFalse (D-01: la entidad Job no existe hasta REC-08)
+        // Dado: sembrás un JobStatus
+        // Acción: IsInUseAsync(tenantId, id)
+        // Esperado: false, todavia no hay nada que lo referencie
+
+        [Fact]
+        public async Task IsInUseAsync_NoJobsYet_ReturnsFalse()
+        {
+            using var context = InMemoryDbContextFactory.Create();
+            var repository = new JobStatusRepository(context);
+            var tenantId = Guid.NewGuid();
+            var seededStatus = CreateJobStatus(tenantId, "en revision");
+            await SeedAsync(context, seededStatus);
+            context.ChangeTracker.Clear();
+
+            var result = await repository.IsInUseAsync(tenantId, seededStatus.Id);
+
+            result.Should().BeFalse();
         }
     }
 }

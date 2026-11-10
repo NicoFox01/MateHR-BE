@@ -22,10 +22,8 @@ namespace MateHR.Infrastructure.Persistance.Repositories
         }
         public async Task<PagedResult<JobStatus>> GetAllAsync(Guid tenantId, int pageNumber, int pageSize, CancellationToken ct = default)
         {
-            //Traigo todos los JobStatus por tenantId
             var query = _context.JobStatuses.AsNoTracking()
                 .Where(js => js.TenantId == tenantId);
-            //Hago la cuenta de cuantos hay en total.
             var totalCount = await query.CountAsync(ct);
             var items = await query
                 .OrderBy(js => js.Name)
@@ -37,9 +35,9 @@ namespace MateHR.Infrastructure.Persistance.Repositories
         }
         public async Task<bool> NameExistsAsync(Guid tenantId, string name, Guid? excludeId, CancellationToken ct = default)
         {
-            //como usar el await y el ct?
+            var normalized = name.Trim().ToLowerInvariant();
             var query = _context.JobStatuses.AsNoTracking()
-                .Where(js => js.TenantId == tenantId && js.Name == name);
+                .Where(js => js.TenantId == tenantId && js.Name.ToLower() == normalized);
             if (excludeId.HasValue)
             {
                 query = query.Where(js => js.Id != excludeId.Value);
@@ -78,6 +76,11 @@ namespace MateHR.Infrastructure.Persistance.Repositories
 
             _context.JobStatuses.Remove(entity);
             await _context.SaveChangesAsync(ct);
+        }
+        // La entidad Job no existe todavia (REC-08); cuando exista se consulta si algun job del tenant referencia este estado.
+        public Task<bool> IsInUseAsync(Guid tenantId, Guid id, CancellationToken ct = default)
+        {
+            return Task.FromResult(false);
         }
     }
 }
