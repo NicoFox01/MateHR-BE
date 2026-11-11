@@ -2,7 +2,6 @@ using FluentAssertions;
 using MateHR.Application.Common.Interfaces;
 using MateHR.Application.Tests.Common;
 using MateHR.Application.Users.Commands;
-using MateHR.Application.Users.DTOs;
 using MateHR.Application.Users.Interfaces;
 using MateHR.Domain.Common;
 using MateHR.Domain.Exceptions;
@@ -10,7 +9,6 @@ using MateHR.Domain.Users.Entities;
 using MateHR.Domain.Users.Enums;
 using MateHR.Domain.Users.Interfaces;
 using Moq;
-using Xunit;
 
 namespace MateHR.Application.Tests.Users.Commands
 {

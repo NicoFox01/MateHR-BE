@@ -1,6 +1,5 @@
 using FluentAssertions;
 using MateHR.Domain.Exceptions;
-using Xunit;
 
 namespace MateHR.Domain.Tests.Exceptions
 {

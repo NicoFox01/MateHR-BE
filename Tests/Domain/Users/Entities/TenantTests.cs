@@ -2,7 +2,6 @@
 using MateHR.Domain.Tenants.Entities;
 using MateHR.Domain.Tenants.Enums;
 using MateHR.Domain.Tenants.ValueObjects;
-using Xunit;
 
 namespace MateHR.Domain.Tests.Users.Entities
 {

@@ -2,6 +2,8 @@
   <Folder Name="/Documentation/">
     <File Path="ReadME.md" />
     <File Path="backlog.md" />
+    <File Path="backlog_detallado.md" />
+    <File Path="AGENTS.md" />
   </Folder>
   <Project Path="MateHR.Api/MateHR.Api.csproj" />
   <Project Path="MateHR.Application/MateHR.Application.csproj" />

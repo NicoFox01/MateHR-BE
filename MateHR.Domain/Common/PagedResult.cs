@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-
-namespace MateHR.Domain.Common
+﻿namespace MateHR.Domain.Common
 {
     public class PagedResult<T>
     {

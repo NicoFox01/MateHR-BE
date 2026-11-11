@@ -1,10 +1,9 @@
-using System.Net;
-using System.Net.Http.Json;
-using System.Text.Json;
 using FluentAssertions;
 using MateHR.Api.Tests.Common;
 using MateHR.Domain.Users.Enums;
-using Xunit;
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace MateHR.Api.Tests.Controllers.v1
 {

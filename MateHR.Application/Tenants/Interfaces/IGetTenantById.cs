@@ -4,6 +4,6 @@ namespace MateHR.Application.Tenants.Interfaces
 {
     public interface IGetTenantById
     {
-        Task <TenantResponse> ExecuteAsync (Guid tenantId, CancellationToken cancellationToken = default);
+        Task<TenantResponse> ExecuteAsync(Guid tenantId, CancellationToken cancellationToken = default);
     }
 }

@@ -7,8 +7,8 @@ namespace MateHR.Application.Tenants.DTOs
     {
         public Guid Id { get; set; }
         public string Name { get; set; } = string.Empty;
-        public string Slug { get;  set; } = string.Empty;
-        public string CUIT { get;  set; } = string.Empty;
+        public string Slug { get; set; } = string.Empty;
+        public string CUIT { get; set; } = string.Empty;
         public string OwnerEmail { get; set; } = string.Empty;
         public Industry Industry { get; set; }
         public AddressDto? Address { get; set; }

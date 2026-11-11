@@ -1,5 +1,4 @@
 ﻿using MateHR.Domain.Common;
-using Xunit;
 
 namespace MateHR.Domain.Tests.Common;
 

@@ -1,7 +1,6 @@
 using FluentAssertions;
 using MateHR.Application.Tenants.DTOs;
 using MateHR.Application.Tenants.Validators;
-using Xunit;
 
 namespace MateHR.Application.Tests.Tenants.Validators
 {

@@ -3,7 +3,6 @@ using MateHR.Domain.Users.Entities;
 using MateHR.Infrastructure.Persistance;
 using MateHR.Infrastructure.Persistance.Repositories;
 using MateHR.Infrastructure.Tests.Common;
-using Xunit;
 
 namespace MateHR.Infrastructure.Tests.Persistance.Repositories
 {

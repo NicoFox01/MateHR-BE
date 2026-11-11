@@ -1,6 +1,6 @@
 ﻿using MateHR.Domain.Common;
-using MateHR.Domain.Tenants.Enums;
 using MateHR.Domain.Tenants.Entities;
+using MateHR.Domain.Tenants.Enums;
 namespace MateHR.Domain.Tenants.Interfaces
 {
     public interface ITenantRepository

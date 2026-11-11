@@ -1,13 +1,10 @@
 ﻿using FluentValidation;
 using MateHR.Application.Tenants.DTOs;
 using MateHR.Domain.Tenants.Entities;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace MateHR.Application.Tenants.Validators
 {
-    public class UpdateTenantDtoValidator:AbstractValidator<UpdateTenantDto>
+    public class UpdateTenantDtoValidator : AbstractValidator<UpdateTenantDto>
     {
         public UpdateTenantDtoValidator()
         {

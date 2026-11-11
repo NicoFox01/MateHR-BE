@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace MateHR.Domain.Tenants.ValueObjects
+﻿namespace MateHR.Domain.Tenants.ValueObjects
 {
     public class Address
     {

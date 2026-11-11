@@ -5,7 +5,6 @@ using MateHR.Infrastructure.Persistance;
 using MateHR.Infrastructure.Services;
 using MateHR.Infrastructure.Tests.Common;
 using Microsoft.Extensions.Caching.Memory;
-using Xunit;
 
 namespace MateHR.Infrastructure.Tests.Services
 {

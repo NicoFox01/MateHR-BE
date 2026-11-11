@@ -1,9 +1,12 @@
 using AutoMapper;
 using FluentAssertions;
+using MateHR.Application.Recruitment.JobStatuses.DTOs;
+using MateHR.Application.Recruitment.JobStatuses.Mappings;
 using MateHR.Application.Tenants.DTOs;
 using MateHR.Application.Tenants.Mappings;
 using MateHR.Application.Users.Mappings;
 using MateHR.Domain.Common;
+using MateHR.Domain.Recruitment.Entities;
 using MateHR.Domain.Tenants.Entities;
 using MateHR.Domain.Tenants.Enums;
 using MateHR.Domain.Tenants.ValueObjects;
@@ -42,6 +45,47 @@ namespace MateHR.Application.Tests.Common
             Action act = () => configuration.AssertConfigurationIsValid();
 
             act.Should().NotThrow<AutoMapperConfigurationException>();
+        }
+
+        [Fact]
+        public void JobStatusMapping_AssertConfigurationIsValid_Passes()
+        {
+            var configuration = new MapperConfiguration(cfg => cfg.AddProfile<JobStatusMapping>(), NullLoggerFactory.Instance);
+
+            Action act = () => configuration.AssertConfigurationIsValid();
+
+            act.Should().NotThrow<AutoMapperConfigurationException>();
+        }
+
+        [Fact]
+        public void Map_JobStatusToJobStatusResponse_MapsProperties()
+        {
+            var mapper = TestMapper.Create();
+            var tenantId = Guid.NewGuid();
+            var status = new JobStatus(tenantId, "Abierto");
+
+            var response = mapper.Map<JobStatusResponse>(status);
+
+            response.Id.Should().Be(status.Id);
+            response.TenantId.Should().Be(tenantId);
+            response.Name.Should().Be("Abierto");
+        }
+
+        [Fact]
+        public void Map_PagedResultOfJobStatusToPagedResultOfJobStatusResponse_MapsItems()
+        {
+            var mapper = TestMapper.Create();
+            var tenantId = Guid.NewGuid();
+            var items = new List<JobStatus> { new(tenantId, "Abierto"), new(tenantId, "Cerrado") };
+            var paged = new PagedResult<JobStatus>(items, 1, 20, 2);
+
+            var mapped = mapper.Map<PagedResult<JobStatusResponse>>(paged);
+
+            mapped.Items.Should().HaveCount(2);
+            mapped.Items.Should().AllBeOfType<JobStatusResponse>();
+            mapped.PageNumber.Should().Be(1);
+            mapped.PageSize.Should().Be(20);
+            mapped.TotalCount.Should().Be(2);
         }
         [Fact]
         public void RecruitmentMappings_AssertConfigurationIsValid_Passes()

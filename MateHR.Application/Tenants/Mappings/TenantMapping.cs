@@ -9,7 +9,7 @@ namespace MateHR.Application.Tenants.Mappings
 {
     public class TenantMapping : Profile
     {
-        public TenantMapping() 
+        public TenantMapping()
         {
             CreateMap<Tenant, TenantResponse>();
             CreateMap<Address, AddressDto>();

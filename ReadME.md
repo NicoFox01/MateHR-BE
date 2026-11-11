@@ -662,6 +662,40 @@ GetVacationBalanceQuery
 
 ---
 
+# Proceso de Ramas - Git
+
+# 1. Actualizar main
+git checkout main
+git pull origin main
+
+# 2. Crear y cambiar a una nueva rama
+git checkout -b feature/nombre-funcionalidad
+
+# 3. Guardar los cambios
+git add .
+git commit -m "feat: descripcion del cambio"
+
+# 4. Subir la rama
+git push -u origin feature/nombre-funcionalidad
+
+# 5. Volver a main y actualizar
+git checkout main
+git pull origin main
+
+# 6. Integrar los cambios
+git merge feature/nombre-funcionalidad
+
+# 7. Publicar main
+git push origin main
+
+# 8. Eliminar la rama local
+git branch -d feature/nombre-funcionalidad
+
+# 9. Eliminar la rama remota
+git push origin --delete feature/nombre-funcionalidad
+
+---
+
 # Objetivo final
 
 Mantener una arquitectura:

@@ -1,5 +1,4 @@
 using MateHR.Api.Seeding;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace MateHR.Api.Extensions
 {

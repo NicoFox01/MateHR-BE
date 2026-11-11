@@ -1,8 +1,8 @@
-using System.Diagnostics;
-using System.Globalization;
 using MateHR.Application.Users.Interfaces;
 using MateHR.Domain.Common;
 using Microsoft.AspNetCore.Authorization;
+using System.Diagnostics;
+using System.Globalization;
 
 namespace MateHR.Api.Middleware
 {

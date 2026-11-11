@@ -4,6 +4,6 @@ namespace MateHR.Application.Tenants.Interfaces
 {
     public interface IChangeRecruitmentModeTenant
     {
-        Task<TenantResponse> ExecuteAsync (Guid tenantId, ChangeRecruitmentModeDto changeRecruitmentModeDto, CancellationToken cancellationToken = default);
+        Task<TenantResponse> ExecuteAsync(Guid tenantId, ChangeRecruitmentModeDto changeRecruitmentModeDto, CancellationToken cancellationToken = default);
     }
 }

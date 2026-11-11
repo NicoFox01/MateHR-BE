@@ -1,6 +1,6 @@
-using System.Net.Http.Headers;
 using MateHR.Application.Common.Interfaces;
 using MateHR.Domain.Common;
+using MateHR.Domain.Recruitment.Entities;
 using MateHR.Domain.Tenants.Entities;
 using MateHR.Domain.Tenants.Enums;
 using MateHR.Domain.Users.Entities;
@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using System.Net.Http.Headers;
 
 namespace MateHR.Api.Tests.Common
 {
@@ -98,6 +99,16 @@ namespace MateHR.Api.Tests.Common
             context.Users.Add(user);
             context.SaveChanges();
             return user;
+        }
+        public JobStatus SeedJobStatus(Guid tenantId, string name)
+        {
+            using var scope = Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+            var jobStatus = new JobStatus(tenantId, name);
+            context.JobStatuses.Add(jobStatus);
+            context.SaveChanges();
+            return jobStatus;
         }
 
         public HttpClient CreateAuthenticatedClient(User user)

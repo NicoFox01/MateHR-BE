@@ -1,5 +1,5 @@
-using System.Security.Cryptography;
 using MateHR.Application.Common.Interfaces;
+using System.Security.Cryptography;
 
 namespace MateHR.Infrastructure.Authentication
 {

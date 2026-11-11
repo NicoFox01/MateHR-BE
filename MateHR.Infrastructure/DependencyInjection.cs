@@ -1,5 +1,6 @@
 ﻿using MateHR.Application.Common.Interfaces;
 using MateHR.Application.Users.Interfaces;
+using MateHR.Domain.Recruitment.Interfaces;
 using MateHR.Domain.Tenants.Interfaces;
 using MateHR.Domain.Users.Interfaces;
 using MateHR.Infrastructure.Authentication;
@@ -30,6 +31,7 @@ namespace MateHR.Infrastructure
             services.AddScoped<ITenantContext, TenantContext>();
             services.AddScoped<IUserRepository, UserRepository>();
             services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+            services.AddScoped<IJobStatusRepository, JobStatusRepository>();
 
             services.AddMemoryCache();
             services.AddScoped<IUserSecurityStampValidator, UserSecurityStampValidator>();

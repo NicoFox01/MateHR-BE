@@ -1,6 +1,5 @@
 using FluentAssertions;
 using MateHR.Domain.Tenants.ValueObjects;
-using Xunit;
 
 namespace MateHR.Domain.Tests.Tenants.ValueObjects
 {

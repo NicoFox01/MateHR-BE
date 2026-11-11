@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace MateHR.Domain.Tenants.Enums
+﻿namespace MateHR.Domain.Tenants.Enums
 {
     public enum RecruitmentMode
     {

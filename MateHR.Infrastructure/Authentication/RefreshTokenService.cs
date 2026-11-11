@@ -1,9 +1,9 @@
-using System.Security.Cryptography;
-using System.Text;
 using MateHR.Application.Common.Interfaces;
 using MateHR.Domain.Common;
 using MateHR.Infrastructure.Settings;
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace MateHR.Infrastructure.Authentication
 {

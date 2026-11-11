@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace MateHR.Application.Tenants.DTOs
+﻿namespace MateHR.Application.Tenants.DTOs
 {
     public class AddressDto
     {

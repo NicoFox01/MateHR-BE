@@ -9,7 +9,6 @@ using MateHR.Domain.Tenants.Entities;
 using MateHR.Domain.Tenants.Enums;
 using MateHR.Domain.Tenants.Interfaces;
 using Moq;
-using Xunit;
 
 namespace MateHR.Application.Tests.Tenants.Queries
 {

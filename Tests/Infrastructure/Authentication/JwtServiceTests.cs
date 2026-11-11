@@ -1,6 +1,3 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
 using FluentAssertions;
 using MateHR.Domain.Common;
 using MateHR.Domain.Users.Enums;
@@ -8,7 +5,9 @@ using MateHR.Infrastructure.Authentication;
 using MateHR.Infrastructure.Settings;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using Xunit;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 namespace MateHR.Infrastructure.Tests.Authentication
 {

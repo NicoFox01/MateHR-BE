@@ -1,7 +1,6 @@
 using FluentAssertions;
 using MateHR.Domain.Tenants.Enums;
 using MateHR.Domain.Users.Enums;
-using Xunit;
 
 namespace MateHR.Domain.Tests.Tenants.Enums
 {
