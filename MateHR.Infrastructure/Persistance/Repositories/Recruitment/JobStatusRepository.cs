@@ -2,7 +2,7 @@
 using MateHR.Domain.Recruitment.Entities;
 using MateHR.Domain.Recruitment.Interfaces;
 using Microsoft.EntityFrameworkCore;
-namespace MateHR.Infrastructure.Persistance.Repositories
+namespace MateHR.Infrastructure.Persistance.Repositories.Recruitment
 {
     public class JobStatusRepository : IJobStatusRepository
     {

@@ -14,6 +14,7 @@ namespace MateHR.Domain.Tests.Recruitment.Entities
             area.Id.Should().NotBe(Guid.Empty);
             area.TenantId.Should().Be(tenantId);
             area.Name.Should().Be("Ventas");
+            area.IsActive.Should().BeTrue();
         }
         [Fact]
         public void Constructor_EmptyTenant_ThrowsArgumentException()
@@ -58,6 +59,37 @@ namespace MateHR.Domain.Tests.Recruitment.Entities
             act.Should().Throw<ArgumentException>()
                 .Which.ParamName.Should().Be("name");
             area.Name.Should().Be("Ventas");
+        }
+        [Fact]
+        public void Deactivate_SetsInactive()
+        {
+            var area = new Area(Guid.NewGuid(), "Ventas");
+            area.Deactivate();
+            area.IsActive.Should().BeFalse();
+        }
+        [Fact]
+        public void Activate_SetsActive()
+        { 
+            var area = new Area(Guid.NewGuid(), "Ventas");
+            area.Deactivate();
+            area.Activate();
+            area.IsActive.Should().BeTrue();
+        }
+        [Fact]
+        public void Deactivate_AlreadyInactive_StaysInactive()
+        {
+            var area = new Area(Guid.NewGuid(), "Ventas");
+            area.Deactivate();
+            area.Deactivate();
+            area.IsActive.Should().BeFalse();
+        }
+        [Fact]
+        public void Activate_AlreadyActive_StaysActive()
+        {
+            var area = new Area(Guid.NewGuid(), "Ventas");
+            area.Activate();
+            area.Activate();
+            area.IsActive.Should().BeTrue();
         }
     }
 }

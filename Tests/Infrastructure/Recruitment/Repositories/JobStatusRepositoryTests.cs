@@ -1,14 +1,14 @@
 using FluentAssertions;
 using MateHR.Domain.Recruitment.Entities;
 using MateHR.Infrastructure.Persistance;
-using MateHR.Infrastructure.Persistance.Repositories;
+using MateHR.Infrastructure.Persistance.Repositories.Recruitment;
 using MateHR.Infrastructure.Tests.Common;
 
-namespace MateHR.Tests.Infrastructure.Recruitment.Repositories
+namespace MateHR.Infrastructure.Tests.Recruitment.Repositories
 {
     public class JobStatusRepositoryTests
     {
-        private static JobStatus CreateJobStatus(Guid tenantId, string name = "Nuevo Status") =>
+        private static JobStatus CreateJobStatus(Guid tenantId, string name = "Nueva Area") =>
             new(tenantId, name);
 
         private static async Task SeedAsync(ApplicationDbContext context, params JobStatus[] jobStatuses)
