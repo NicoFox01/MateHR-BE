@@ -15,6 +15,7 @@ namespace MateHR.Domain.Tests.Recruitment.Entities
             jobStatus.Id.Should().NotBe(Guid.Empty);
             jobStatus.TenantId.Should().Be(tenantId);
             jobStatus.Name.Should().Be("Active");
+            jobStatus.IsActive.Should().BeTrue();
         }
 
         [Fact]
@@ -74,6 +75,49 @@ namespace MateHR.Domain.Tests.Recruitment.Entities
             act.Should().Throw<ArgumentException>()
                 .Which.ParamName.Should().Be("name");
             jobStatus.Name.Should().Be("Active");
+        }
+
+        [Fact]
+        public void Deactivate_SetsInactive()
+        {
+            var jobStatus = new JobStatus(Guid.NewGuid(), "Active");
+
+            jobStatus.Deactivate();
+
+            jobStatus.IsActive.Should().BeFalse();
+        }
+
+        [Fact]
+        public void Activate_SetsActive()
+        {
+            var jobStatus = new JobStatus(Guid.NewGuid(), "Active");
+            jobStatus.Deactivate();
+
+            jobStatus.Activate();
+
+            jobStatus.IsActive.Should().BeTrue();
+        }
+
+        [Fact]
+        public void Deactivate_AlreadyInactive_StaysInactive()
+        {
+            var jobStatus = new JobStatus(Guid.NewGuid(), "Active");
+
+            jobStatus.Deactivate();
+            jobStatus.Deactivate();
+
+            jobStatus.IsActive.Should().BeFalse();
+        }
+
+        [Fact]
+        public void Activate_AlreadyActive_StaysActive()
+        {
+            var jobStatus = new JobStatus(Guid.NewGuid(), "Active");
+
+            jobStatus.Activate();
+            jobStatus.Activate();
+
+            jobStatus.IsActive.Should().BeTrue();
         }
     }
 }

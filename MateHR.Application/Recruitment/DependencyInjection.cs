@@ -17,6 +17,8 @@ namespace MateHR.Application.Recruitment
             services.AddScoped<IDeleteJobStatus, DeleteJobStatus>();
             services.AddScoped<IGetJobStatuses, GetJobStatuses>();
             services.AddScoped<IGetJobStatusById, GetJobStatusById>();
+            services.AddScoped<IActivateJobStatus, ActivateJobStatus>();
+            services.AddScoped<IDeactivateJobStatus, DeactivateJobStatus>();
             return services;
         }
     }

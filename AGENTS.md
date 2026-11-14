@@ -100,6 +100,21 @@ Patrón de casos de uso:
 - `Delete`: tenant → `GetByIdAsync` → `IsInUseAsync` → si `true`, `EntityInUseException` → borrar.
 - `GetById`: tenant → `GetByIdAsync` → mapear.
 - `GetAll`: validar paginación → tenant → `GetAllAsync` → mapear `PagedResult`.
+- `Activate`/`Deactivate`: tenant → `SetActiveAsync(tenant, id, true/false)` → mapear.
+
+Catálogos (patrón compartido):
+
+- Toda entidad de catálogo implementa `ICatalogEntity` (`MateHR.Domain/Recruitment/Common`):
+  `Id`, `TenantId`, `Name`, `IsActive` (get) + `Rename`, `Activate`, `Deactivate`. `IsActive` nace
+  en `true`; `Activate`/`Deactivate` son idempotentes.
+- Toda interfaz de repo de catálogo hereda `ICatalogRepository<TEntity>` y el repo concreto hereda
+  `CatalogRepository<TEntity>` (`Infrastructure/.../Repositories/Recruitment/CatalogRepository.cs`).
+  El repo concreto queda solo con el constructor `: base(context)`; overridear `IsInUseAsync` cuando
+  aplique (REC-08).
+- `GetAllAsync(tenantId, pageNumber, pageSize, includeInactive = false, ct)`: por defecto solo activas;
+  `includeInactive` es solo Admin. `NameExistsAsync` **no** filtra por `IsActive` (los inactivos siguen
+  reservando el nombre).
+- No usar clase base para las entidades (EF la trataría como jerarquía TPH); se usa interfaz.
 
 Reglas y trampas:
 
@@ -164,10 +179,11 @@ Reportar el resultado en tabla: criterio / estado / evidencia (`archivo:línea`)
 
 ## 9. Decisiones abiertas relevantes
 
-- **D-01**: `IJobStatusRepository.IsInUseAsync` devuelve `false` hasta que exista `Job` (REC-08).
-- **D-05**: unicidad de nombres de catálogo **case-insensitive**. Ya implementado en
-  `JobStatusRepository.NameExistsAsync` (normaliza con `Trim().ToLowerInvariant()` y compara
-  `js.Name.ToLower()`). Cubierto por test `NameExistsAsync_DifferentCaseAndSpaces_ReturnsTrue`.
+- **D-01**: `IsInUseAsync` devuelve `false` hasta que exista `Job` (REC-08). `Delete` es hard delete
+  (solo si no está en uso); “dar de baja” es `IsActive` (soft) vía `Activate`/`Deactivate`.
+- **D-05**: unicidad de nombres de catálogo **case-insensitive**. Implementado en
+  `CatalogRepository<TEntity>.NameExistsAsync` (normaliza con `Trim().ToLowerInvariant()` y compara
+  `Name.ToLower()`). Cubierto por `NameExistsAsync_DifferentCaseAndSpaces_ReturnsTrue`.
 - Otras decisiones (D-02 a D-12) están en `backlog_detallado.md`; consultarlas antes de las tarjetas
   afectadas.
 
@@ -183,6 +199,10 @@ Reportar el resultado en tabla: criterio / estado / evidencia (`archivo:línea`)
 ## 11. Estado de referencia
 
 - REC-00: fundamentos hechos / parcial.
-- REC-01.1 y REC-01.2: hechos.
-- REC-01.3: implementado y en verde (17 casos de JobStatus + mappings); pendiente de cierre formal.
-- Próximo paso: **REC-01.4** (controller `JobStatusesController` + tests de API).
+- REC-01 (JobStatus): completo. Incluye `IsActive`/`Activate`/`Deactivate`, `GetAll` con
+  `includeInactive`, use cases `Activate`/`Deactivate` + `PATCH /{id}/activate|deactivate`, y la
+  migración `AddJobStatusIsActive`. Repo sobre `CatalogRepository<JobStatus>`.
+- REC-02.2 (Area infra): completo (dominio + infra + DI + migración `AreaEntity`), repo sobre
+  `CatalogRepository<Area>`. Falta REC-02.3 (Application) y REC-02.4 (Api).
+- Abstracción de catálogos: `ICatalogEntity` + `ICatalogRepository<T>` + `CatalogRepository<T>`.
+- Próximo paso: **REC-02.3** (Application de `Area`) y luego **REC-02.4** (controller + tests de API).

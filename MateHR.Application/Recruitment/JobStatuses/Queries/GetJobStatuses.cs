@@ -43,7 +43,7 @@ namespace MateHR.Application.Recruitment.JobStatuses.Queries
             {
                 throw new UnauthorizedAccessException("No tienes acceso para acceder a esta información");
             }
-            var jobStatusesPaged = await _repository.GetAllAsync(tenantId.Value, request.PageNumber, request.PageSize, ct);
+            var jobStatusesPaged = await _repository.GetAllAsync(tenantId.Value, request.PageNumber, request.PageSize, request.IncludeInactive, ct);
             return _mapper.Map<PagedResult<JobStatusResponse>>(jobStatusesPaged);
         }
     }

@@ -156,7 +156,7 @@ Estas decisiones cambian contratos. Resolverlas antes de la tarjeta indicada.
 
 | ID | Decisión | Recomendación | Impacto |
 |---|---|---|---|
-| D-01 | ¿Cómo se detecta que un catálogo está en uso para bloquear el borrado? | Agregar `IsInUseAsync(tenantId, id)` al repositorio de cada catálogo. Infraestructura sabe si hay jobs que lo referencian; Application solo pregunta. | REC-01.3 a REC-07.3 |
+| D-01 | ¿Cómo se detecta que un catálogo está en uso para bloquear el borrado? | `IsInUseAsync(tenantId, id)` en el repositorio de cada catálogo (Infraestructura sabe si hay jobs que lo referencian; Application solo pregunta). **Resuelto:** el `Delete` es hard delete y solo procede si `IsInUseAsync` es `false`; si está en uso → 409 `EntityInUseException`. Para “dar de baja” sin borrar se usa `IsActive` (soft) vía `Activate`/`Deactivate` + `SetActiveAsync`. | REC-01.3 a REC-07.3 |
 | D-02 | ¿Cómo se define el estado inicial de un proceso de candidato? | Agregar `IsInitial` a `CandidateProcessStatus`, con regla “un solo inicial por tenant”. | REC-07 y REC-11.3 |
 | D-03 | ¿Quién es el usuario que solicita el borrado de un job? | Agregar `ICurrentUserContext` en Application (o pasar `userId` desde el controller). Recomiendo `ICurrentUserContext` para no contaminar DTOs. | REC-08.3 |
 | D-04 | ¿Qué excepción usar para “confirmar borrado sin solicitud previa”? | Crear `DeletionNotRequestedException` en Domain/Recruitment/Exceptions y mapearla a 409. No mapear toda `InvalidOperationException` a 409. | REC-08.3 y REC-08.4 |
@@ -295,6 +295,10 @@ Los catálogos (`JobStatus`, `Area`, `SubArea`, `Client`, `ProcessStep`, `Search
 | D5 | nombre de longitud máxima + 1 | construir entidad | `ArgumentException` |
 | D6 | entidad válida | `Rename("  Nuevo  ")` | Name `"Nuevo"` |
 | D7 | entidad válida | `Rename("")` | `ArgumentException` y el nombre anterior se conserva |
+| D8 | entidad recién construida | leer `IsActive` | `true` (todo catálogo nace activo) |
+| D9 | entidad activa | `Deactivate()` | `IsActive=false` |
+| D10 | entidad inactiva | `Activate()` | `IsActive=true` |
+| D11 | entidad ya activa/inactiva | `Activate()`/`Deactivate()` repetido | idempotente, no lanza |
 
 ### A.2 Infrastructure — casos base
 
@@ -312,6 +316,12 @@ Los catálogos (`JobStatus`, `Area`, `SubArea`, `Client`, `ProcessStep`, `Search
 | I10 | entidad existente | `RenameAsync(A, id, "  Nuevo  ")` | persiste “Nuevo” y lo devuelve |
 | I11 | entidad existente | `DeleteAsync(A, id)` | ya no se encuentra |
 | I12 | id inexistente u otro tenant | `DeleteAsync(A, id)` | `KeyNotFoundException` |
+| I13 | 2 activas + 1 inactiva | `GetAllAsync(A, 1, 10)` | 2 ítems, total 2, sin inactivas |
+| I14 | 2 activas + 1 inactiva | `GetAllAsync(A, 1, 10, includeInactive: true)` | 3 ítems, total 3 |
+| I15 | entidad activa | `SetActiveAsync(A, id, false)` | queda `IsActive=false` |
+| I16 | entidad inactiva | `SetActiveAsync(A, id, true)` | queda `IsActive=true` |
+| I17 | id inexistente u otro tenant | `SetActiveAsync(A, id, ...)` | `KeyNotFoundException` |
+| I18 | “Ventas” existe inactiva | `NameExistsAsync(A, "Ventas", null)` | `true` (los inactivos siguen reservando el nombre) |
 
 > InMemory no valida índices únicos. El duplicado se testea en Application.
 
@@ -333,6 +343,9 @@ Los catálogos (`JobStatus`, `Area`, `SubArea`, `Client`, `ProcessStep`, `Search
 | A12 | id inexistente | `GetById` | `KeyNotFoundException` |
 | A13 | tenant A, página 2, tamaño 10 | `GetAll` | repositorio recibe 2 y 10; `PagedResult` mapeado con total correcto |
 | A14 | página 0 o tamaño 0/101 | `GetAll` | `ValidationException` |
+| A15 | entidad existente | `Activate` | `SetActiveAsync(..., true)` una vez; response con `IsActive=true` |
+| A16 | entidad existente | `Deactivate` | `SetActiveAsync(..., false)` una vez; response con `IsActive=false` |
+| A17 | `ITenantContext` nulo | `Activate`/`Deactivate` | `UnauthorizedAccessException`; no se toca el repositorio |
 
 ### A.4 Api — casos base
 
@@ -350,18 +363,26 @@ Los catálogos (`JobStatus`, `Area`, `SubArea`, `Client`, `ProcessStep`, `Search
 | P10 | token `Admin` | POST/PUT con body inválido | 400 con errores por campo |
 | P11 | token `Admin` | GET por id inexistente u otro tenant | 404 |
 | P12 | token `Admin` | GET lista | 200 con paginación y total |
+| P13 | token `Admin` | PATCH `/{id}/deactivate` / `/{id}/activate` | 200 + `isActive` actualizado |
+| P14 | token `Recruiter` | PATCH `/{id}/deactivate` / `/{id}/activate` | 403 |
+| P15 | token `Admin` | GET lista con `includeInactive=true` | incluye inactivas |
+| P16 | token `Recruiter` | GET lista con `includeInactive=true` y GET por id de un inactivo | el flag se ignora (solo activas); el GET por id de inactivo da 404 |
 
 ### A.5 Variaciones por entidad
 
 | Entidad | Longitud máx. nombre | Campos extra | Reglas específicas |
 |---|---|---|---|
-| `JobStatus` | 100 | — | Catálogo simple. |
+| `JobStatus` | 30 | — | Catálogo simple. |
 | `Area` | 100 | — | Catálogo simple. |
 | `SubArea` | 100 | `AreaId` | Debe existir el área en el tenant. `MoveToArea` valida `AreaId` no vacío. Listado filtra por `areaId`. |
 | `Client` | 150 | `ClientType` (`Internal`/`External`) | Enum obligatorio y definido. `Update` cambia nombre y tipo. En API viaja como texto. |
 | `ProcessStep` | 100 | — | Catálogo simple. |
 | `SearchReason` | 150 | — | Catálogo simple. |
 | `CandidateProcessStatus` | 100 | `IsInitial` (si se aprueba D-02) | Un solo inicial por tenant. Si no se aprueba D-02, el estado inicial se resuelve en REC-11.3. |
+
+> Todo catálogo hereda el contrato `ICatalogEntity` (`Id`, `TenantId`, `Name`, `IsActive`,
+> `Rename`, `Activate`, `Deactivate`). Los repositorios heredan `CatalogRepository<TEntity>`
+> (ver A.6), que ya implementa el CRUD, `GetAll` con `includeInactive` y `SetActiveAsync`.
 
 ### A.6 Guía técnica por capa (catálogo)
 
@@ -374,9 +395,12 @@ Los catálogos (`JobStatus`, `Area`, `SubArea`, `Client`, `ProcessStep`, `Search
 
 **Infrastructure**
 
-1. Configuración EF: tabla, clave, `ValueGeneratedNever`, máximo de nombre, índice por `TenantId` + nombre.
-2. Repositorio con `GetByIdAsync`, `GetAllAsync`, `NameExistsAsync`, `CreateAsync`, `RenameAsync`,
-   `DeleteAsync` y, si se aprueba D-01, `IsInUseAsync`.
+1. Configuración EF: tabla, clave, `ValueGeneratedNever`, máximo de nombre, `IsActive` requerido, índice por `TenantId` + nombre.
+2. La entidad implementa `ICatalogEntity` y el repositorio hereda `CatalogRepository<TEntity>`
+   (`MateHR.Infrastructure/Persistance/Repositories/Recruitment/CatalogRepository.cs`), que ya trae
+   `GetByIdAsync`, `GetAllAsync` (con `includeInactive`), `NameExistsAsync`, `CreateAsync`,
+   `RenameAsync`, `SetActiveAsync`, `DeleteAsync` e `IsInUseAsync` (override si aplica D-01).
+   El repo concreto queda solo con el constructor `: base(context)`.
 3. Todas las consultas filtran por `tenantId`. `GetByIdAsync` lanza `KeyNotFoundException`.
 4. `AsNoTracking` en lecturas; `SaveChangesAsync` en escrituras.
 5. Agregar el DbSet al `ApplicationDbContext` en esta subtarea (no antes).
@@ -391,17 +415,20 @@ Los catálogos (`JobStatus`, `Area`, `SubArea`, `Client`, `ProcessStep`, `Search
 4. Leer `ITenantContext.CurrentTenantId`; si es nulo, `UnauthorizedAccessException`.
 5. Validar duplicado antes de crear/renombrar.
 6. En delete, si `IsInUseAsync` es true, `EntityInUseException`.
-7. Mapping entidad → response y `PagedResult` → `PagedResult<Response>`.
-8. Registrar el caso de uso en `MateHR.Application/Recruitment/DependencyInjection.cs`.
+7. Mapping entidad → response y `PagedResult` → `PagedResult<Response>`. El response incluye `IsActive`.
+8. Casos `Activate`/`Deactivate` que llaman `SetActiveAsync` y devuelven el response mapeado.
+9. Registrar el caso de uso en `MateHR.Application/Recruitment/DependencyInjection.cs`.
 
 **Api**
 
 1. Controller delgado, sin lógica de negocio.
 2. Ruta `api/v1/recruitment/<recurso>`.
-3. Policy: lectura con `RequireRecruiter`; escritura con `RequireTenantAdmin`.
-4. `POST` devuelve 201 con `CreatedAtAction`; `DELETE` devuelve 204.
-5. Los errores los traduce el middleware; el controller no arma respuestas de error a mano.
-6. Tests de integración con `CustomWebApplicationFactory`, sembrando tenant y usuarios Admin/Recruiter/Employee.
+3. Policy: lectura con `RequireRecruiter`; escritura y `PATCH /{id}/activate|deactivate` con `RequireTenantAdmin`.
+4. `POST` devuelve 201 con `CreatedAtAction`; `DELETE` devuelve 204; `PATCH` activar/desactivar devuelve 200.
+5. `includeInactive` y la visibilidad de inactivos por id son solo para `Admin`: el controller fuerza
+   `IncludeInactive=false` y responde 404 para inactivos cuando el usuario no es Admin.
+6. Los errores los traduce el middleware; el controller no arma respuestas de error a mano.
+7. Tests de integración con `CustomWebApplicationFactory`, sembrando tenant y usuarios Admin/Recruiter/Employee.
 
 ---
 

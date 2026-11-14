@@ -182,5 +182,114 @@ namespace MateHR.Tests.Api.Controllers.v1.Recruitment
             body.GetProperty("items").GetArrayLength().Should().Be(3);
             body.GetProperty("totalCount").GetInt32().Should().Be(3);
         }
+
+        [Fact]
+        public async Task Deactivate_WithAdminToken_Returns200WithInactive()
+        {
+            var tenant = _factory.SeedTenant();
+            var status = _factory.SeedJobStatus(tenant.Id, "Abierto");
+            var client = _factory.CreateClientAs(UserRole.Admin, tenant.Id);
+
+            var response = await client.PatchAsync($"{JobStatusesPath}/{status.Id}/deactivate", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("id").GetGuid().Should().Be(status.Id);
+            body.GetProperty("isActive").GetBoolean().Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task Activate_WithAdminToken_Returns200WithActive()
+        {
+            var tenant = _factory.SeedTenant();
+            var status = _factory.SeedJobStatus(tenant.Id, "Abierto", isActive: false);
+            var client = _factory.CreateClientAs(UserRole.Admin, tenant.Id);
+
+            var response = await client.PatchAsync($"{JobStatusesPath}/{status.Id}/activate", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("id").GetGuid().Should().Be(status.Id);
+            body.GetProperty("isActive").GetBoolean().Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task Deactivate_WithRecruiterToken_Returns403()
+        {
+            var tenant = _factory.SeedTenant();
+            var status = _factory.SeedJobStatus(tenant.Id, "Abierto");
+            var client = _factory.CreateClientAs(UserRole.Recruiter, tenant.Id);
+
+            var response = await client.PatchAsync($"{JobStatusesPath}/{status.Id}/deactivate", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+
+        [Fact]
+        public async Task Deactivate_UnknownId_Returns404()
+        {
+            var tenant = _factory.SeedTenant();
+            var client = _factory.CreateClientAs(UserRole.Admin, tenant.Id);
+
+            var response = await client.PatchAsync($"{JobStatusesPath}/{Guid.NewGuid()}/deactivate", null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Fact]
+        public async Task GetAll_IncludeInactiveAsAdmin_IncludesInactive()
+        {
+            var tenant = _factory.SeedTenant();
+            _factory.SeedJobStatus(tenant.Id, "Abierto");
+            _factory.SeedJobStatus(tenant.Id, "Cerrado", isActive: false);
+            var client = _factory.CreateClientAs(UserRole.Admin, tenant.Id);
+
+            var response = await client.GetAsync($"{JobStatusesPath}?includeInactive=true");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("totalCount").GetInt32().Should().Be(2);
+        }
+
+        [Fact]
+        public async Task GetAll_IncludeInactiveAsRecruiter_ExcludesInactive()
+        {
+            var tenant = _factory.SeedTenant();
+            _factory.SeedJobStatus(tenant.Id, "Abierto");
+            _factory.SeedJobStatus(tenant.Id, "Cerrado", isActive: false);
+            var client = _factory.CreateClientAs(UserRole.Recruiter, tenant.Id);
+
+            var response = await client.GetAsync($"{JobStatusesPath}?includeInactive=true");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("totalCount").GetInt32().Should().Be(1);
+        }
+
+        [Fact]
+        public async Task GetById_InactiveAsRecruiter_Returns404()
+        {
+            var tenant = _factory.SeedTenant();
+            var status = _factory.SeedJobStatus(tenant.Id, "Cerrado", isActive: false);
+            var client = _factory.CreateClientAs(UserRole.Recruiter, tenant.Id);
+
+            var response = await client.GetAsync($"{JobStatusesPath}/{status.Id}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Fact]
+        public async Task GetById_InactiveAsAdmin_Returns200()
+        {
+            var tenant = _factory.SeedTenant();
+            var status = _factory.SeedJobStatus(tenant.Id, "Cerrado", isActive: false);
+            var client = _factory.CreateClientAs(UserRole.Admin, tenant.Id);
+
+            var response = await client.GetAsync($"{JobStatusesPath}/{status.Id}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            body.GetProperty("isActive").GetBoolean().Should().BeFalse();
+        }
     }
 }
