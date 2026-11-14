@@ -1,4 +1,7 @@
-﻿using MateHR.Application.Recruitment.JobStatuses.Commands;
+﻿using MateHR.Application.Recruitment.Areas.Commands;
+using MateHR.Application.Recruitment.Areas.Interfaces;
+using MateHR.Application.Recruitment.Areas.Queries;
+using MateHR.Application.Recruitment.JobStatuses.Commands;
 using MateHR.Application.Recruitment.JobStatuses.Interfaces;
 using MateHR.Application.Recruitment.JobStatuses.Queries;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +22,14 @@ namespace MateHR.Application.Recruitment
             services.AddScoped<IGetJobStatusById, GetJobStatusById>();
             services.AddScoped<IActivateJobStatus, ActivateJobStatus>();
             services.AddScoped<IDeactivateJobStatus, DeactivateJobStatus>();
+
+            services.AddScoped<ICreateArea, CreateArea>();
+            services.AddScoped<IUpdateArea, UpdateArea>();
+            services.AddScoped<IDeleteArea, DeleteArea>();
+            services.AddScoped<IGetAreas, GetAreas>();
+            services.AddScoped<IGetAreaById, GetAreaById>();
+            services.AddScoped<IActivateArea, ActivateArea>();
+            services.AddScoped<IDeactivateArea, DeactivateArea>();
             return services;
         }
     }

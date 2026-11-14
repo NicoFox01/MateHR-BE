@@ -1,5 +1,7 @@
 using AutoMapper;
 using FluentAssertions;
+using MateHR.Application.Recruitment.Areas.DTOs;
+using MateHR.Application.Recruitment.Areas.Mappings;
 using MateHR.Application.Recruitment.JobStatuses.DTOs;
 using MateHR.Application.Recruitment.JobStatuses.Mappings;
 using MateHR.Application.Tenants.DTOs;
@@ -55,6 +57,31 @@ namespace MateHR.Application.Tests.Common
             Action act = () => configuration.AssertConfigurationIsValid();
 
             act.Should().NotThrow<AutoMapperConfigurationException>();
+        }
+
+        [Fact]
+        public void AreaMapping_AssertConfigurationIsValid_Passes()
+        {
+            var configuration = new MapperConfiguration(cfg => cfg.AddProfile<AreaMapping>(), NullLoggerFactory.Instance);
+
+            Action act = () => configuration.AssertConfigurationIsValid();
+
+            act.Should().NotThrow<AutoMapperConfigurationException>();
+        }
+
+        [Fact]
+        public void Map_AreaToAreaResponse_MapsProperties()
+        {
+            var mapper = TestMapper.Create();
+            var tenantId = Guid.NewGuid();
+            var area = new Area(tenantId, "Ventas");
+
+            var response = mapper.Map<AreaResponse>(area);
+
+            response.Id.Should().Be(area.Id);
+            response.TenantId.Should().Be(tenantId);
+            response.Name.Should().Be("Ventas");
+            response.IsActive.Should().BeTrue();
         }
 
         [Fact]

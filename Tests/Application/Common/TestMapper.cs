@@ -1,4 +1,5 @@
 using AutoMapper;
+using MateHR.Application.Recruitment.Areas.Mappings;
 using MateHR.Application.Recruitment.JobStatuses.Mappings;
 using MateHR.Application.Tenants.Mappings;
 using MateHR.Application.Users.Mappings;
@@ -16,6 +17,7 @@ namespace MateHR.Application.Tests.Common
                     cfg.AddProfile<TenantMapping>();
                     cfg.AddProfile<UserMapping>();
                     cfg.AddProfile<JobStatusMapping>();
+                    cfg.AddProfile<AreaMapping>();
                 },
                 NullLoggerFactory.Instance);
 
