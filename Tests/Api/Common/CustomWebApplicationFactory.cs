@@ -114,6 +114,16 @@ namespace MateHR.Api.Tests.Common
             context.SaveChanges();
             return jobStatus;
         }
+        public Area SeedArea(Guid tenantId, string name, bool isActive = true)
+        {
+            using var scope = Services.CreateScope();
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var area = new Area(tenantId, name);
+            if (!isActive) area.Deactivate();
+            context.Areas.Add(area);
+            context.SaveChanges();
+            return area;
+        }
 
         public HttpClient CreateAuthenticatedClient(User user)
         {
