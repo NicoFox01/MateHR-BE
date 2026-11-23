@@ -18,12 +18,16 @@ namespace MateHR.Api.Controllers.v1.Recruitment
         private readonly IDeleteJobStatus _deleteJobStatus;
         private readonly IGetJobStatusById _getJobStatusById;
         private readonly IGetJobStatuses _getJobStatuses;
+        private readonly IActivateJobStatus _activateJobStatus;
+        private readonly IDeactivateJobStatus _deactivateJobStatus;
         public JobStatusesController(
             ICreateJobStatus createJobStatus,
             IUpdateJobStatus updateJobStatus,
             IDeleteJobStatus deleteJobStatus,
             IGetJobStatusById getJobStatusById,
-            IGetJobStatuses getJobStatuses
+            IGetJobStatuses getJobStatuses,
+            IActivateJobStatus activateJobStatus,
+            IDeactivateJobStatus deactivateJobStatus
             )
         {
             _createJobStatus = createJobStatus;
@@ -31,6 +35,8 @@ namespace MateHR.Api.Controllers.v1.Recruitment
             _deleteJobStatus = deleteJobStatus;
             _getJobStatusById = getJobStatusById;
             _getJobStatuses = getJobStatuses;
+            _activateJobStatus = activateJobStatus;
+            _deactivateJobStatus = deactivateJobStatus;
         }
         [Authorize(Policy = AuthPolicies.RequireTenantAdmin)]
         [HttpPost]
@@ -52,6 +58,10 @@ namespace MateHR.Api.Controllers.v1.Recruitment
             CancellationToken cancellationToken)
         {
             var jobStatus = await _getJobStatusById.ExecuteAsync(id, cancellationToken);
+            if (!jobStatus.IsActive && !User.IsInRole(AuthPolicies.AdminRole))
+            {
+                return NotFound();
+            }
             return Ok(jobStatus);
         }
         [HttpGet]
@@ -61,6 +71,10 @@ namespace MateHR.Api.Controllers.v1.Recruitment
             [FromQuery] GetJobStatusesRequest request,
             CancellationToken cancellationToken)
         {
+            if (!User.IsInRole(AuthPolicies.AdminRole))
+            {
+                request.IncludeInactive = false;
+            }
             var jobStatuses = await _getJobStatuses.ExecuteAsync(request, cancellationToken);
             return Ok(jobStatuses);
         }
@@ -89,6 +103,30 @@ namespace MateHR.Api.Controllers.v1.Recruitment
         {
             await _deleteJobStatus.ExecuteAsync(id, cancellationToken);
             return NoContent();
+        }
+        [Authorize(Policy = AuthPolicies.RequireTenantAdmin)]
+        [HttpPatch("{id:guid}/activate")]
+        [ProducesResponseType(typeof(JobStatusResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<JobStatusResponse>> Activate(
+            [FromRoute] Guid id,
+            CancellationToken cancellationToken)
+        {
+            var jobStatus = await _activateJobStatus.ExecuteAsync(id, cancellationToken);
+            return Ok(jobStatus);
+        }
+        [Authorize(Policy = AuthPolicies.RequireTenantAdmin)]
+        [HttpPatch("{id:guid}/deactivate")]
+        [ProducesResponseType(typeof(JobStatusResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<JobStatusResponse>> Deactivate(
+            [FromRoute] Guid id,
+            CancellationToken cancellationToken)
+        {
+            var jobStatus = await _deactivateJobStatus.ExecuteAsync(id, cancellationToken);
+            return Ok(jobStatus);
         }
 
     }

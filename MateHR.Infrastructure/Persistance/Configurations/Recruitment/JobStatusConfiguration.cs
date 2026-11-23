@@ -15,6 +15,7 @@ namespace MateHR.Infrastructure.Persistance.Configurations.Recruitment
             builder.HasKey(s => s.Id);
             builder.Property(s => s.Id).ValueGeneratedNever();
             builder.Property(s => s.Name).HasMaxLength(JobStatus.NameMaxLength).IsRequired();
+            builder.Property(s => s.IsActive).IsRequired();
             builder.HasIndex(s => new { s.TenantId, s.Name });
 
         }

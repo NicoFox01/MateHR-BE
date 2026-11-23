@@ -16,6 +16,7 @@ namespace MateHR.Infrastructure.Persistance
         public DbSet<User> Users { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<JobStatus> JobStatuses { get; set; }
+        public DbSet<Area> Areas { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

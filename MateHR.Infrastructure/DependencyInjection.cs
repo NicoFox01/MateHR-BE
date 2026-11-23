@@ -6,6 +6,7 @@ using MateHR.Domain.Users.Interfaces;
 using MateHR.Infrastructure.Authentication;
 using MateHR.Infrastructure.Persistance;
 using MateHR.Infrastructure.Persistance.Repositories;
+using MateHR.Infrastructure.Persistance.Repositories.Recruitment;
 using MateHR.Infrastructure.Services;
 using MateHR.Infrastructure.Settings;
 using Microsoft.EntityFrameworkCore;
@@ -32,6 +33,7 @@ namespace MateHR.Infrastructure
             services.AddScoped<IUserRepository, UserRepository>();
             services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
             services.AddScoped<IJobStatusRepository, JobStatusRepository>();
+            services.AddScoped<IAreaRepository, AreaRepository>();
 
             services.AddMemoryCache();
             services.AddScoped<IUserSecurityStampValidator, UserSecurityStampValidator>();

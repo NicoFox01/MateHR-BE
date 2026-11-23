@@ -43,14 +43,14 @@ namespace MateHR.Application.Tests.Recruitment.JobStatuses.Queries
                 CreateStatus(tenantId, "Nuevo")
             };
             repository
-                .Setup(r => r.GetAllAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetAllAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new PagedResult<JobStatus>(items, 2, 10, 15));
 
             var result = await BuildUseCase(repository, tenantId)
                 .ExecuteAsync(new GetJobStatusesRequest { PageNumber = 2, PageSize = 10 });
 
             repository.Verify(
-                r => r.GetAllAsync(tenantId, 2, 10, It.IsAny<CancellationToken>()),
+                r => r.GetAllAsync(tenantId, 2, 10, false, It.IsAny<CancellationToken>()),
                 Times.Once);
             result.PageNumber.Should().Be(2);
             result.PageSize.Should().Be(10);
@@ -83,7 +83,7 @@ namespace MateHR.Application.Tests.Recruitment.JobStatuses.Queries
             var tenantId = Guid.NewGuid();
             var items = new List<JobStatus> { CreateStatus(tenantId, "Abierto"), CreateStatus(tenantId, "Cerrado") };
             repository
-                .Setup(r => r.GetAllAsync(tenantId, 1, 20, It.IsAny<CancellationToken>()))
+                .Setup(r => r.GetAllAsync(tenantId, 1, 20, It.IsAny<bool>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new PagedResult<JobStatus>(items, 1, 20, 2));
 
             var result = await BuildUseCase(repository, tenantId).ExecuteAsync(new GetJobStatusesRequest());
@@ -91,6 +91,23 @@ namespace MateHR.Application.Tests.Recruitment.JobStatuses.Queries
             result.Items.Should().HaveCount(2);
             result.Items.Select(s => s.Name).Should().ContainInOrder("Abierto", "Cerrado");
             result.Items.Should().OnlyContain(s => s.TenantId == tenantId);
+        }
+
+        [Fact]
+        public async Task ExecuteAsync_IncludeInactiveTrue_ForwardsFlagToRepository()
+        {
+            var repository = new Mock<IJobStatusRepository>();
+            var tenantId = Guid.NewGuid();
+            repository
+                .Setup(r => r.GetAllAsync(tenantId, 1, 20, true, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new PagedResult<JobStatus>(new List<JobStatus>(), 1, 20, 0));
+
+            await BuildUseCase(repository, tenantId)
+                .ExecuteAsync(new GetJobStatusesRequest { IncludeInactive = true });
+
+            repository.Verify(
+                r => r.GetAllAsync(tenantId, 1, 20, true, It.IsAny<CancellationToken>()),
+                Times.Once);
         }
     }
 }

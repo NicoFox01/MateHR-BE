@@ -1,14 +1,14 @@
 using FluentAssertions;
 using MateHR.Domain.Recruitment.Entities;
 using MateHR.Infrastructure.Persistance;
-using MateHR.Infrastructure.Persistance.Repositories;
+using MateHR.Infrastructure.Persistance.Repositories.Recruitment;
 using MateHR.Infrastructure.Tests.Common;
 
-namespace MateHR.Tests.Infrastructure.Recruitment.Repositories
+namespace MateHR.Infrastructure.Tests.Recruitment.Repositories
 {
     public class JobStatusRepositoryTests
     {
-        private static JobStatus CreateJobStatus(Guid tenantId, string name = "Nuevo Status") =>
+        private static JobStatus CreateJobStatus(Guid tenantId, string name = "Nueva Area") =>
             new(tenantId, name);
 
         private static async Task SeedAsync(ApplicationDbContext context, params JobStatus[] jobStatuses)
@@ -252,6 +252,113 @@ namespace MateHR.Tests.Infrastructure.Recruitment.Repositories
             var result = await repository.IsInUseAsync(tenantId, seededStatus.Id);
 
             result.Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task GetAllAsync_Default_ExcludesInactive()
+        {
+            using var context = InMemoryDbContextFactory.Create();
+            var repository = new JobStatusRepository(context);
+            var tenantId = Guid.NewGuid();
+            var activeOne = CreateJobStatus(tenantId, "Activo Uno");
+            var activeTwo = CreateJobStatus(tenantId, "Activo Dos");
+            var inactive = CreateJobStatus(tenantId, "Inactivo");
+            inactive.Deactivate();
+            await SeedAsync(context, activeOne, activeTwo, inactive);
+            context.ChangeTracker.Clear();
+
+            var result = await repository.GetAllAsync(tenantId, pageNumber: 1, pageSize: 10);
+
+            result.Items.Should().HaveCount(2);
+            result.TotalCount.Should().Be(2);
+            result.Items.Should().OnlyContain(js => js.IsActive);
+            result.Items.Select(js => js.Name).Should().NotContain("Inactivo");
+        }
+
+        [Fact]
+        public async Task GetAllAsync_IncludeInactive_ReturnsBoth()
+        {
+            using var context = InMemoryDbContextFactory.Create();
+            var repository = new JobStatusRepository(context);
+            var tenantId = Guid.NewGuid();
+            var active = CreateJobStatus(tenantId, "Activo");
+            var inactive = CreateJobStatus(tenantId, "Inactivo");
+            inactive.Deactivate();
+            await SeedAsync(context, active, inactive);
+            context.ChangeTracker.Clear();
+
+            var result = await repository.GetAllAsync(tenantId, pageNumber: 1, pageSize: 10, includeInactive: true);
+
+            result.Items.Should().HaveCount(2);
+            result.TotalCount.Should().Be(2);
+            result.Items.Select(js => js.Name).Should().Contain("Activo").And.Contain("Inactivo");
+        }
+
+        [Fact]
+        public async Task SetActiveAsync_Deactivates()
+        {
+            using var context = InMemoryDbContextFactory.Create();
+            var repository = new JobStatusRepository(context);
+            var tenantId = Guid.NewGuid();
+            var seededStatus = CreateJobStatus(tenantId, "Active");
+            await SeedAsync(context, seededStatus);
+            context.ChangeTracker.Clear();
+
+            await repository.SetActiveAsync(tenantId, seededStatus.Id, isActive: false);
+            var reloaded = await repository.GetByIdAsync(tenantId, seededStatus.Id);
+
+            reloaded.IsActive.Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task SetActiveAsync_Activates()
+        {
+            using var context = InMemoryDbContextFactory.Create();
+            var repository = new JobStatusRepository(context);
+            var tenantId = Guid.NewGuid();
+            var seededStatus = CreateJobStatus(tenantId, "Active");
+            seededStatus.Deactivate();
+            await SeedAsync(context, seededStatus);
+            context.ChangeTracker.Clear();
+
+            await repository.SetActiveAsync(tenantId, seededStatus.Id, isActive: true);
+            var reloaded = await repository.GetByIdAsync(tenantId, seededStatus.Id);
+
+            reloaded.IsActive.Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task SetActiveAsync_UnknownOrOtherTenant_ThrowsKeyNotFoundException()
+        {
+            using var context = InMemoryDbContextFactory.Create();
+            var repository = new JobStatusRepository(context);
+            var ownerTenantId = Guid.NewGuid();
+            var otherTenantId = Guid.NewGuid();
+            var seededStatus = CreateJobStatus(ownerTenantId, "Active");
+            await SeedAsync(context, seededStatus);
+            context.ChangeTracker.Clear();
+
+            Func<Task> unknownIdAct = () => repository.SetActiveAsync(ownerTenantId, Guid.NewGuid(), isActive: false);
+            Func<Task> otherTenantAct = () => repository.SetActiveAsync(otherTenantId, seededStatus.Id, isActive: false);
+
+            await unknownIdAct.Should().ThrowAsync<KeyNotFoundException>();
+            await otherTenantAct.Should().ThrowAsync<KeyNotFoundException>();
+        }
+
+        [Fact]
+        public async Task NameExistsAsync_InactiveStillCounts_ReturnsTrue()
+        {
+            using var context = InMemoryDbContextFactory.Create();
+            var repository = new JobStatusRepository(context);
+            var tenantId = Guid.NewGuid();
+            var inactive = CreateJobStatus(tenantId, "Active");
+            inactive.Deactivate();
+            await SeedAsync(context, inactive);
+            context.ChangeTracker.Clear();
+
+            var result = await repository.NameExistsAsync(tenantId, "Active", excludeId: null);
+
+            result.Should().BeTrue();
         }
     }
 }
